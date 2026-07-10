@@ -1,0 +1,49 @@
+name: Claude Code Review
+
+# Auto-reviews every PR against SPEC.md (SPEC.md §12). Credentials are provisioned
+# by running `/install-github-app` in Claude Code once (adds the ANTHROPIC_API_KEY /
+# app secret). Until then this workflow is a no-op-with-error on the secret.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Claude review vs SPEC.md
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are reviewing a pull request for the `autoapply` repo. Read SPEC.md
+            and CLAUDE.md first, then review the PR diff. Flag, specifically and only:
+
+            1. FILE OWNERSHIP (SPEC.md §9): a workstream touching files outside its
+               owned set. A=ats/greenhouse.py, B=ats/ashby.py, C=ats/lever.py+
+               ats/generic.py, D=filling/llm_answers.py + the `answers` CLI body.
+               Each may also add its own tests. Any edit to src/autoapply/ats/base.py
+               or src/autoapply/db.py from a feature branch is a BLOCKING violation.
+            2. INTERFACE DRIFT: changes to the frozen dataclasses / BaseAdapter
+               signatures in ats/base.py. These must go through a separate interface
+               PR, never a feature branch.
+            3. INVENTED PROFILE FACTS: any hardcoded applicant fact (GPA, dates,
+               references, answers) not sourced from profile.yaml. profile.yaml is the
+               only source of truth.
+            4. AUTO-SUBMIT SAFETY: any code path that can click Submit outside
+               BaseAdapter.submit() guarded by --auto-submit + the config allowlist.
+               fill() must never submit. This is the most important check.
+
+            Post concise inline comments. If none of the above are violated, approve
+            with a one-line summary. Do not nitpick style — CI handles ruff.
