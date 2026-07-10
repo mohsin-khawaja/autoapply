@@ -1,0 +1,77 @@
+identity:
+  first_name: Mohsin
+  last_name: Khawaja
+  email: mkhawaja@ucsd.edu
+  phone: "510-949-7141"
+  location: { city: Berkeley, state: CA, country: United States }
+  links:
+    linkedin: https://www.linkedin.com/in/mohsin-khawaja
+    website: https://mohsinkhawaja.com
+    github: ""   # fill in
+
+education:
+  - school: University of California, San Diego
+    degree: B.S.
+    major: "Cognitive Science: Machine Learning & Neural Computation"
+    minor: Computer Science
+    start: 2021-08
+    end: 2025-06
+    gpa: ""      # fill in if asked; leave optional GPA fields blank when empty
+
+experience:
+  - company: Aviz Networks
+    title: AI Engineer (Customer Success)
+    location: "San Jose, CA"
+    start: 2025-10
+    end: present
+    summary: "Built autonomous NetOps agents resolving 100+ Zendesk tickets via MCP tool orchestration; 10+ LLM agents for triage/RCA/config validation on enterprise SONiC; RAG pipelines, guardrails, prompt routing; production agents used in customer workflows and pre-sales demos."
+  - company: Amazon
+    title: Data Analytics (Contract)
+    location: Remote
+    start: 2025-06
+    end: 2025-08
+    summary: "Analytics pipeline over 12K+ employee feedback entries; NLP sentiment classification + SQL (91% accuracy); persona clustering; findings presented to senior HR leadership."
+  - company: UC Berkeley College of Engineering
+    title: Machine Learning Engineer
+    location: "Berkeley, CA"
+    start: 2024-06
+    end: 2025-06
+    summary: "Real-time BCI control for robotic exoskeletons (87% accuracy, 120ms latency); PCA+CV pipeline to 91% F1 with 40% smaller models; EEG preprocessing (band-pass, ICA, wavelet denoising, spectral features)."
+  - company: Matroid
+    title: Software Engineer Intern
+    location: "Palo Alto, CA"
+    start: 2023-06
+    end: 2023-08
+    summary: "Backend services and APIs for computer vision deployment in industrial automation; scalable image-processing pipelines; shipped production reliability features."
+
+projects:
+  - name: EvoScope
+    blurb: "AI trading system — LSTM + DQN, 94.2% accuracy, 2.52 Sharpe; real-time execution across Binance, Coinbase, EVM DEXs; volatility-regime position sizing."
+  - name: LLM Political Evaluation
+    blurb: "Bias evaluation framework across 5+ LLMs, 100+ controlled prompts; response drift, ideological consistency, token-level sentiment gradients."
+  - name: NeuroFocus
+    blurb: "EEG attention classification, 90% accuracy, real-time neurofeedback; alpha/beta/gamma features; SVM/CNN/LSTM evaluation."
+
+skills: [Python, TypeScript, JavaScript, SQL, C++, Rust, Go, PyTorch, TensorFlow, LangChain, RAG, MCP, Prompt Engineering, React, Docker, Git, AWS, EC2, Lambda, NLP, LLMs, Computer Vision, SONiC]
+
+documents:
+  resume: ./assets/Mohsin_Khawaja_Resume.pdf   # drop the file here
+
+answers:   # canonical answers for standard screener questions
+  work_authorization_us: "Yes"
+  require_sponsorship: "No"
+  require_sponsorship_future: "No"
+  over_18: "Yes"
+  willing_to_relocate: "Yes"
+  remote_ok: "Yes"
+  start_date: "Immediately"
+  salary_expectation: "Open / market rate for the role and location"
+  how_did_you_hear: "Company website"
+  previously_employed_here: "No"
+  criminal_record_disclosures: decline_unless_required
+  security_clearance: "No"
+  eeo:   # voluntary self-ID — default all to decline unless set
+    gender: decline
+    race: decline
+    veteran: "I am not a protected veteran"
+    disability: "I do not want to answer"
