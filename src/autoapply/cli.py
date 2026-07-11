@@ -158,6 +158,21 @@ def status() -> None:
 
 
 @app.command()
+def dashboard(
+    port: int = typer.Option(8787, "--port", help="Port to serve on (localhost only)."),
+) -> None:
+    """Serve a local read-only web dashboard over the SQLite DB."""
+    from autoapply.dashboard import serve
+
+    settings = load_settings()
+    if not settings.db_path.exists():
+        console.print("[yellow]no database[/] — run `autoapply init` + `autoapply sync` first.")
+        raise typer.Exit(1)
+    console.print(f"[green]dashboard[/] http://127.0.0.1:{port}  (Ctrl-C to stop)")
+    serve(settings.db_path, port=port)
+
+
+@app.command()
 def export(fmt: str = typer.Argument("csv", help="Export format (csv).")) -> None:
     """Export applications. [stub]"""
     console.print(_MS2)
