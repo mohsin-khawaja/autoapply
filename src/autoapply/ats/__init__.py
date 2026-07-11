@@ -5,4 +5,5 @@ Workstreams A-D add their imports below. Each concrete module calls
 requires editing base.py.
 """
 
+from autoapply.ats import ashby as ashby  # noqa: F401 - registers adapter
 from autoapply.ats import greenhouse as greenhouse  # noqa: F401 - registers adapter
