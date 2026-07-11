@@ -169,10 +169,92 @@ def retry(job_id: str = typer.Argument(..., help="Job id to retry.")) -> None:
     console.print(_MS2)
 
 
+def _edit_text(text: str) -> str | None:
+    """Open ``text`` in $EDITOR (fallback vi); return edited text or None on abort."""
+    import os
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vi"
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+        f.write(text)
+        path = Path(f.name)
+    try:
+        result = subprocess.run([*editor.split(), str(path)], check=False)
+        if result.returncode != 0:
+            return None
+        return path.read_text()
+    finally:
+        path.unlink(missing_ok=True)
+
+
+@answers_app.command("list")
+def answers_list(
+    limit: int = typer.Option(50, help="Max rows."),
+) -> None:
+    """Show cached free-text answers."""
+    settings = load_settings()
+    conn = db.connect(settings.db_path)
+    rows = conn.execute(
+        "SELECT id, company, question, answer, edited_at FROM answers"
+        " ORDER BY id LIMIT ?",
+        (limit,),
+    ).fetchall()
+    conn.close()
+    if not rows:
+        console.print("[yellow]no cached answers[/] — they appear after `autoapply run`.")
+        raise typer.Exit()
+
+    def trunc(s: str, n: int) -> str:
+        return s if len(s) <= n else s[: n - 1] + "…"
+
+    table = Table(title="cached answers")
+    table.add_column("id", justify="right", style="bold")
+    table.add_column("company")
+    table.add_column("question")
+    table.add_column("answer")
+    table.add_column("edited_at", style="dim")
+    for r in rows:
+        table.add_row(
+            str(r["id"]), r["company"], trunc(r["question"], 40),
+            trunc(r["answer"], 60), r["edited_at"] or "—",
+        )
+    console.print(table)
+
+
 @answers_app.command("edit")
-def answers_edit(answer_id: str = typer.Argument(..., help="Answer id.")) -> None:
-    """Edit a cached free-text answer. [stub — workstream D]"""
-    console.print(_WS_D)
+def answers_edit(answer_id: int = typer.Argument(..., help="Answer id.")) -> None:
+    """Edit a cached free-text answer in $EDITOR."""
+    from datetime import UTC, datetime
+
+    settings = load_settings()
+    conn = db.connect(settings.db_path)
+    try:
+        row = conn.execute(
+            "SELECT question_hash, company, question, answer FROM answers WHERE id = ?",
+            (answer_id,),
+        ).fetchone()
+        if row is None:
+            console.print(f"[red]no answer with id {answer_id}[/] — see `autoapply answers list`.")
+            raise typer.Exit(code=1)
+        edited = _edit_text(row["answer"])
+        if edited is None or edited.strip() == row["answer"].strip():
+            console.print("[yellow]unchanged[/]")
+            raise typer.Exit()
+        with db.transaction(conn):
+            db.put_answer(
+                conn,
+                question_hash=row["question_hash"],
+                company=row["company"],
+                question=row["question"],
+                answer=edited.strip(),
+                now_iso=datetime.now(UTC).isoformat(),
+                edited=True,
+            )
+        console.print(f"[green]saved[/] answer {answer_id} ({row['company']})")
+    finally:
+        conn.close()
 
 
 def _playwright_ready() -> bool:
