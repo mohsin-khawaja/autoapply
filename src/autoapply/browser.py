@@ -57,9 +57,17 @@ def looks_blocked(page: Page) -> bool:
     We never solve these — the caller surfaces the window and waits (SPEC.md §1,
     §10). Detection only, best-effort.
     """
-    needles = ("captcha", "are you a robot", "verify you are human", "cf-challenge", "hcaptcha")
+    # Visible text only: ATS pages (e.g. Ashby) ship captcha *scripts* in their
+    # bundles on every page, so matching raw HTML false-positives constantly.
+    needles = (
+        "are you a robot",
+        "verify you are human",
+        "verifying you are human",
+        "please complete the security check",
+        "unusual traffic",
+    )
     try:
-        html = page.content().lower()
+        text = page.inner_text("body").lower()
     except Exception:  # noqa: BLE001 - detection must never raise
         return False
-    return any(n in html for n in needles)
+    return any(n in text for n in needles)

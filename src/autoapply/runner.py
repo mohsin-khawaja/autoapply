@@ -148,11 +148,18 @@ def process_one(
     adapter = adapter_cls()
 
     page.goto(job.url, wait_until="domcontentloaded")
+    try:  # SPA ATSs (Ashby) render the form after load; wait for the network to settle
+        page.wait_for_load_state("networkidle", timeout=10_000)
+    except Exception:  # noqa: BLE001 - busy pages never go idle; proceed anyway
+        pass
     if looks_blocked(page):
         console.print("[yellow]blocked page — manual tier; finish it in the browser.[/]")
         return mark_manual("bot wall/captcha")
 
     fields = adapter.extract_form(page)
+    if not fields:  # one retry after a settle — React forms mount late
+        page.wait_for_timeout(3_000)
+        fields = adapter.extract_form(page)
     if not fields:
         return mark_manual("no form found")
 
