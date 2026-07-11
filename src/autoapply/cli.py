@@ -28,7 +28,6 @@ app.add_typer(answers_app, name="answers")
 
 console = Console()
 
-_MS2 = "[yellow]stub[/] — wired in Milestone 2 integration (SPEC.md §9)."
 _WS_D = "[yellow]stub[/] — implemented by workstream D (feat/llm-answers)."
 
 
@@ -125,11 +124,74 @@ def list_jobs(
 
 @queue_app.command("add")
 def queue_add(
-    job_id: str = typer.Argument(None, help="Job id to enqueue."),
+    job_id: str = typer.Argument(None, help="Job id (or unique prefix) to enqueue."),
     top: int = typer.Option(None, "--top", help="Enqueue the top-N by score."),
+    min_score: int = typer.Option(70, "--min-score", help="Score floor for --top."),
 ) -> None:
-    """Enqueue a job (or the top-N). [stub]"""
-    console.print(_MS2)
+    """Enqueue a job by id, or the top-N scored jobs."""
+    from autoapply.runner import enqueue
+
+    settings = load_settings()
+    conn = db.connect(settings.db_path)
+    if top is not None:
+        ids = [j.id for j in db.list_jobs(conn, min_score=min_score, limit=top)]
+    elif job_id:
+        rows = conn.execute(
+            "SELECT id FROM jobs WHERE id LIKE ?", (job_id + "%",)
+        ).fetchall()
+        if len(rows) != 1:
+            console.print(f"[red]{len(rows)} jobs match {job_id!r}[/] — need a unique id/prefix.")
+            conn.close()
+            raise typer.Exit(1)
+        ids = [rows[0]["id"]]
+    else:
+        console.print("[red]give a job id or --top N[/]")
+        conn.close()
+        raise typer.Exit(1)
+    added = enqueue(conn, ids)
+    conn.close()
+    console.print(f"[green]queued[/] {added} job(s) ({len(ids) - added} already tracked)")
+
+
+@queue_app.command("list")
+def queue_list() -> None:
+    """Show the queue."""
+    settings = load_settings()
+    conn = db.connect(settings.db_path)
+    rows = conn.execute(
+        """SELECT a.job_id, j.company_name, j.title, j.score, j.ats
+           FROM applications a JOIN jobs j ON j.id = a.job_id
+           WHERE a.status = 'queued' ORDER BY j.score DESC"""
+    ).fetchall()
+    conn.close()
+    if not rows:
+        console.print("[yellow]queue empty[/]")
+        raise typer.Exit()
+    table = Table(title="queue")
+    table.add_column("score", justify="right", style="bold")
+    table.add_column("company")
+    table.add_column("title")
+    table.add_column("ats")
+    table.add_column("id", style="dim")
+    for r in rows:
+        table.add_row(
+            str(r["score"]), r["company_name"], r["title"], r["ats"] or "?", r["job_id"][:8]
+        )
+    console.print(table)
+
+
+@queue_app.command("remove")
+def queue_remove(job_id: str = typer.Argument(..., help="Job id (or prefix) to dequeue.")) -> None:
+    """Remove a queued job (only rows still in 'queued')."""
+    settings = load_settings()
+    conn = db.connect(settings.db_path)
+    with db.transaction(conn):
+        cur = conn.execute(
+            "DELETE FROM applications WHERE status = 'queued' AND job_id LIKE ?",
+            (job_id + "%",),
+        )
+    conn.close()
+    console.print(f"[green]removed[/] {cur.rowcount} queued row(s)")
 
 
 @app.command()
@@ -138,35 +200,111 @@ def run(
     auto_submit: bool = typer.Option(False, "--auto-submit", help="Allowlisted ATSs only."),
     max_per_run: int = typer.Option(15, "--max-per-run", help="Cap applications per run."),
 ) -> None:
-    """Process the queue: fill → review pause → submit. [stub — needs adapters]"""
-    console.print(_MS2)
-    console.print(
-        "[dim]adapters land via workstreams A–D; `run` is wired in Milestone 2.[/]"
-    )
+    """Process the queue: fill → review pause → submit (human clicks Submit)."""
+    from autoapply.runner import run_queue
+
+    settings = load_settings()
+    settings.ensure_dirs()
+    run_queue(settings, dry_run=dry_run, auto_submit=auto_submit, max_per_run=max_per_run)
 
 
 @app.command()
-def open(job_id: str = typer.Argument(..., help="Manual-tier job id.")) -> None:
-    """Open a manual-tier posting in the persistent browser. [stub]"""
-    console.print(_MS2)
+def open(job_id: str = typer.Argument(..., help="Manual-tier job id (or prefix).")) -> None:
+    """Open a manual-tier posting in the persistent browser."""
+    from autoapply.browser import launch_context
+
+    settings = load_settings()
+    conn = db.connect(settings.db_path)
+    row = conn.execute(
+        "SELECT COALESCE(final_url, url) u FROM jobs WHERE id LIKE ?", (job_id + "%",)
+    ).fetchone()
+    conn.close()
+    if row is None:
+        console.print(f"[red]no job matching {job_id!r}[/]")
+        raise typer.Exit(1)
+    console.print(f"opening {row['u']} — close the browser window when done.")
+    with launch_context(settings.browser_data_dir, headed=True) as (_, page):
+        page.goto(row["u"])
+        console.input("[dim]Enter to close…[/] ")
 
 
 @app.command()
 def status() -> None:
-    """Show application tracking. [stub]"""
-    console.print(_MS2)
+    """Show application tracking."""
+    settings = load_settings()
+    conn = db.connect(settings.db_path)
+    counts = conn.execute(
+        "SELECT status, COUNT(*) c FROM applications GROUP BY status ORDER BY c DESC"
+    ).fetchall()
+    rows = conn.execute(
+        """SELECT a.status, a.submitted_at, a.filled_at, j.company_name, j.title
+           FROM applications a JOIN jobs j ON j.id = a.job_id
+           WHERE a.status != 'queued'
+           ORDER BY COALESCE(a.submitted_at, a.filled_at) DESC LIMIT 30"""
+    ).fetchall()
+    conn.close()
+    if not counts:
+        console.print("[yellow]no applications tracked[/] — `autoapply queue add` first.")
+        raise typer.Exit()
+    console.print("  ".join(f"[bold]{r['status']}[/] {r['c']}" for r in counts))
+    if rows:
+        table = Table(title="recent")
+        table.add_column("status")
+        table.add_column("company")
+        table.add_column("title")
+        table.add_column("when", style="dim")
+        for r in rows:
+            table.add_row(
+                r["status"], r["company_name"], r["title"],
+                (r["submitted_at"] or r["filled_at"] or "")[:16],
+            )
+        console.print(table)
 
 
 @app.command()
 def export(fmt: str = typer.Argument("csv", help="Export format (csv).")) -> None:
-    """Export applications. [stub]"""
-    console.print(_MS2)
+    """Export applications to runs/applications.csv."""
+    import csv
+
+    if fmt != "csv":
+        console.print(f"[red]unsupported format {fmt!r}[/] — only csv.")
+        raise typer.Exit(1)
+    settings = load_settings()
+    settings.ensure_dirs()
+    conn = db.connect(settings.db_path)
+    rows = conn.execute(
+        """SELECT a.job_id, j.company_name, j.title, j.ats, j.score, a.status,
+                  a.filled_at, a.submitted_at, COALESCE(j.final_url, j.url) AS url
+           FROM applications a JOIN jobs j ON j.id = a.job_id ORDER BY a.id"""
+    ).fetchall()
+    conn.close()
+    out = settings.runs_dir / "applications.csv"
+    with out.open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow([
+            "job_id", "company", "title", "ats", "score", "status",
+            "filled_at", "submitted_at", "url",
+        ])
+        w.writerows([list(r) for r in rows])
+    console.print(f"[green]exported[/] {len(rows)} rows -> {out}")
 
 
 @app.command()
-def retry(job_id: str = typer.Argument(..., help="Job id to retry.")) -> None:
-    """Retry a failed application. [stub]"""
-    console.print(_MS2)
+def retry(job_id: str = typer.Argument(..., help="Job id (or prefix) to retry.")) -> None:
+    """Re-queue a failed/skipped/needs_input application."""
+    settings = load_settings()
+    conn = db.connect(settings.db_path)
+    with db.transaction(conn):
+        cur = conn.execute(
+            """UPDATE applications SET status='queued', notes=NULL
+               WHERE job_id LIKE ? AND status IN ('failed','skipped','needs_input')""",
+            (job_id + "%",),
+        )
+    conn.close()
+    if cur.rowcount == 0:
+        console.print("[yellow]nothing to retry[/] (must be failed/skipped/needs_input)")
+        raise typer.Exit(1)
+    console.print(f"[green]re-queued[/] {cur.rowcount} application(s)")
 
 
 def _edit_text(text: str) -> str | None:

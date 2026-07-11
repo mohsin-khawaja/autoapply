@@ -201,21 +201,45 @@ class BaseAdapter(ABC):
     # ---- shared, concrete; defined here, not owned by any workstream ----
 
     def review_pause(self, page: Page, plan: FillPlan, run_dir: Path) -> Path:
-        """Screenshot the filled form, print a field->value diff, and block.
+        """Screenshot the filled form for the review pause. Returns the path.
 
-        Concrete implementation is wired in Milestone 2. Returns the screenshot
-        path. Adapters generally do not override this.
+        The caller prints the field->value diff and blocks for human input;
+        this hook only captures evidence. Adapters generally do not override.
         """
-        raise NotImplementedError("review_pause is implemented during Milestone 2 integration")
+        run_dir.mkdir(parents=True, exist_ok=True)
+        shot = run_dir / f"{plan.job_id[:12]}.png"
+        page.screenshot(path=str(shot), full_page=True)
+        return shot
+
+    #: Confirmation needles checked (lowercased) after a submit click.
+    _CONFIRMATION_NEEDLES: ClassVar[tuple[str, ...]] = (
+        "thank you for applying",
+        "application submitted",
+        "application received",
+        "we have received your application",
+        "your application has been submitted",
+    )
 
     def submit(self, page: Page) -> FillResult:
         """Click the form's Submit and detect the confirmation page/text.
 
         DANGER: only invoked when ``--auto-submit`` is set AND this adapter's
-        :attr:`kind` is on the config allowlist. Concrete implementation is wired
-        in Milestone 2.
+        :attr:`kind` is on the config allowlist (SPEC §1). Never call this from
+        :meth:`fill`.
         """
-        raise NotImplementedError("submit is implemented during Milestone 2 integration")
+        button = page.locator("button[type=submit], input[type=submit]").first
+        try:
+            button.click()
+            page.wait_for_load_state("networkidle", timeout=15_000)
+        except Exception as e:  # noqa: BLE001 - report, never raise mid-run
+            return FillResult(status="failed", error=f"submit click failed: {e}")
+        html = page.content().lower()
+        confirmed = any(n in html for n in self._CONFIRMATION_NEEDLES)
+        return FillResult(
+            status="submitted" if confirmed else "filled",
+            confirmation_detected=confirmed,
+            notes="confirmation detected" if confirmed else "no confirmation text found",
+        )
 
 
 #: All registered adapter classes, in registration (priority) order.
