@@ -93,6 +93,25 @@ def sync(
     )
 
 
+@app.command()
+def scout(
+    min_score: int = typer.Option(0, "--min-score", help="Skip listings scoring below this."),
+) -> None:
+    """Pull big-tech career sites (Workday tenants + IBM), fit-score, upsert."""
+    from autoapply.sources import bigtech
+
+    settings = load_settings()
+    settings.ensure_dirs()
+    with console.status("scouting big-tech career sites…"):
+        result = bigtech.scout(settings, min_score=min_score)
+    console.print(
+        f"[green]scouted[/] {result.fetched} listings — "
+        f"upserted {result.upserted}, score≥70 {result.scored_ge_70}"
+    )
+    for err in result.errors:
+        console.print(f"[yellow]![/] {err}")
+
+
 @app.command(name="list")
 def list_jobs(
     min_score: int = typer.Option(0, "--min-score", help="Only show jobs at/above this score."),
