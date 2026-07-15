@@ -55,6 +55,15 @@ def _collect(db_path: Path) -> dict:
                 (since,),
             )
         ]
+        apps = [
+            dict(r)
+            for r in conn.execute(
+                """SELECT a.status, a.filled_at, a.submitted_at, a.screenshot, a.notes,
+                          j.company_name, j.title, COALESCE(j.final_url, j.url) AS url
+                   FROM applications a JOIN jobs j ON j.id = a.job_id
+                   ORDER BY COALESCE(a.submitted_at, a.filled_at, '') DESC, a.id DESC"""
+            )
+        ]
         jobs = [
             dict(r)
             for r in conn.execute(
@@ -79,6 +88,7 @@ def _collect(db_path: Path) -> dict:
             "by_ats": by_ats,
             "app_status": app_status,
             "by_day": by_day,
+            "applications": apps,
             "jobs": jobs,
             "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         }
@@ -181,6 +191,17 @@ a{color:var(--s1);text-decoration:none} a:hover{text-decoration:underline}
   <div class="card"><h2>Postings per day — last 30 days</h2><div id="days"></div></div>
   <div class="card"><h2>Applications by status</h2><div id="apps"></div></div>
 </div>
+<div class="card" id="appcard" style="margin-bottom:16px">
+  <div class="controls">
+    <h2 style="margin:0">Applications</h2>
+    <select id="fstatus"><option value="">All statuses</option></select>
+    <span class="count" id="an"></span>
+  </div>
+  <div style="overflow-x:auto"><table id="atbl">
+    <thead><tr><th>Status</th><th>Company</th><th>Title</th>
+    <th>Filled</th><th>Submitted</th><th>Notes</th></tr></thead><tbody></tbody>
+  </table></div>
+</div>
 <div class="card">
   <div class="controls">
     <h2 style="margin:0">Top jobs</h2>
@@ -268,6 +289,20 @@ function line(el,data){
   svg.addEventListener("mouseleave",()=>tip.style.display="none");
 }
 
+let APPS=[];
+function renderApps(){
+  const fs=$("#fstatus").value;
+  const rows=APPS.filter(a=>!fs||a.status===fs);
+  $("#an").textContent=`${rows.length} of ${APPS.length}`;
+  $("#atbl tbody").innerHTML=rows.length?rows.map(a=>`<tr>
+    <td><span class="pill" style="--dot:${STATUS_DOT[a.status]||"var(--muted)"}">${esc(a.status)}</span></td>
+    <td>${esc(a.company_name)}</td>
+    <td><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a></td>
+    <td class="num">${(a.filled_at||"—").slice(0,16).replace("T"," ")}</td>
+    <td class="num">${(a.submitted_at||"—").slice(0,16).replace("T"," ")}</td>
+    <td style="color:var(--muted);max-width:260px">${esc((a.notes||"").slice(0,80))}</td>
+  </tr>`).join(""):'<tr><td colspan="6" class="empty">no applications yet — `autoapply queue add` + `autoapply run`</td></tr>';
+}
 const STATUS_DOT={submitted:"var(--good)",filled:"var(--s1)",queued:"var(--muted)",
   needs_input:"var(--warn)",failed:"var(--crit)",manual:"var(--serious)",
   skipped:"var(--muted)",messaged:"var(--s1)",deferred:"var(--warn)",replied:"var(--good)"};
@@ -305,6 +340,18 @@ fetch("/api/data").then(r=>r.json()).then(d=>{
   hbars($("#ats"),d.by_ats,"ats","count");
   line($("#days"),d.by_day);
   hbars($("#apps"),d.app_status,"status","count",s=>STATUS_DOT[s]||"var(--muted)");
+  APPS=d.applications||[];
+  $("#fstatus").innerHTML='<option value="">All statuses</option>'+
+    [...new Set(APPS.map(a=>a.status))].sort().map(x=>`<option>${esc(x)}</option>`).join("");
+  $("#fstatus").addEventListener("change",renderApps);
+  renderApps();
+  document.querySelectorAll("#tiles .tile")[2].style.cursor="pointer";
+  document.querySelectorAll("#tiles .tile")[2].addEventListener("click",()=>{
+    $("#fstatus").value=""; renderApps();
+    $("#appcard").scrollIntoView({behavior:"smooth"});});
+  $("#apps").querySelectorAll("g.row").forEach((g,i)=>{g.style.cursor="pointer";
+    g.addEventListener("click",()=>{$("#fstatus").value=d.app_status[i].status;
+      renderApps(); $("#appcard").scrollIntoView({behavior:"smooth"});});});
   JOBS=d.jobs; const ats=[...new Set(JOBS.map(j=>j.ats).filter(Boolean))].sort();
   $("#fats").innerHTML='<option value="">All ATS</option>'+ats.map(a=>`<option>${esc(a)}</option>`).join("");
   renderTable();
