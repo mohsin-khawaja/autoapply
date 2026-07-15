@@ -76,4 +76,9 @@ def load_settings() -> Settings:
         s.ollama_model = model
     if host := os.environ.get("AUTOAPPLY_OLLAMA_HOST"):
         s.ollama_host = host
+    if allow := os.environ.get("AUTOAPPLY_AUTO_SUBMIT"):
+        # comma-separated ATS kinds, e.g. "greenhouse,lever" (SPEC §10 allowlist)
+        s.auto_submit_allowlist = {
+            ATSKind(k.strip().lower()) for k in allow.split(",") if k.strip()
+        }
     return s

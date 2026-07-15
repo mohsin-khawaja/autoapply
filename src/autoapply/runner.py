@@ -260,6 +260,7 @@ def run_queue(
                 db.record_application(conn, job_id=job.job_id, status="failed", notes=str(e))
                 console.print(f"[red]failed:[/] {e}")
                 status = "failed"
+            conn.commit()  # record_application runs outside db.transaction
             console.print(f"[dim]recorded:[/] {status}")
             if not dry_run and i < len(jobs) - 1:
                 delay = random.uniform(settings.rate_min_seconds, settings.rate_max_seconds)

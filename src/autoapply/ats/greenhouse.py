@@ -94,6 +94,8 @@ _EXTRACT_JS = """
     const tag = el.tagName.toLowerCase();
     const type = (el.getAttribute('type') || '').toLowerCase();
     if (['hidden', 'submit', 'button', 'image', 'reset'].includes(type)) continue;
+    // intl-tel-input internals (phone country search) are widget chrome, not questions
+    if ((el.id || '').startsWith('iti-')) continue;
     if (el.disabled) continue;
 
     const label = labelTextFor(el);
