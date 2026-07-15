@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from dataclasses import dataclass
 
 import httpx
@@ -18,7 +19,12 @@ import httpx
 from autoapply.config import Settings
 from autoapply.db import connect, transaction, upsert_job
 from autoapply.profile import Profile, load_profile
-from autoapply.sources.simplify import Listing, heuristic_score
+from autoapply.sources.simplify import (
+    HIGH_LOCATIONS,
+    MEDIUM_LOCATIONS,
+    Listing,
+    heuristic_score,
+)
 
 #: Verified Workday CXS tenants (host prefix, tenant, site). All return public
 #: JSON from POST /wday/cxs/{tenant}/{site}/jobs.
@@ -41,6 +47,25 @@ DEFAULT_SEARCHES = (
 )
 
 _ENTRY_HINTS = ("new grad", "entry level", "early career", "university", "graduate", "intern")
+
+#: Seniority variants the shared excludes miss ("Sr", "Dir", "Engineer 4").
+_SENIOR_HINTS = ("sr ", "sr.", "sr,", "dir,", "dir ", "director", "manager", "lead ", "head of")
+_SENIOR_RE = re.compile(r"\b(?:[3-9]|iii|iv|v|vi)\b\s*$")
+_US_TOKEN_RE = re.compile(r"\bus\b")
+
+
+def _is_us(job: BigTechJob) -> bool:
+    """Strict US gate — big-tech sites are global, unlike the new-grad feed.
+
+    The shared ``_has_us_location`` treats ", ca" as California, which
+    false-positives on "Calgary, CA"; match explicit US signals instead.
+    """
+    text = " ".join(job.locations).lower()
+    if not text:
+        return True
+    if "united states" in text or "remote" in text or _US_TOKEN_RE.search(text):
+        return True
+    return any(city in text for city in HIGH_LOCATIONS + MEDIUM_LOCATIONS)
 
 
 @dataclass(slots=True)
@@ -89,6 +114,10 @@ def fit_score(job: BigTechJob, profile: Profile) -> int:
     if base == 0:  # hard-excluded (senior/clearance/non-US)
         return 0
     title = job.title.lower()
+    if any(h in title for h in _SENIOR_HINTS) or _SENIOR_RE.search(title):
+        return 0
+    if not _is_us(job):
+        return 0
     bonus = 0
     level = (job.level or "").lower()
     if any(h in title for h in _ENTRY_HINTS) or "entry" in level:
