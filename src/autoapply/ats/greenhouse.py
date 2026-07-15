@@ -238,21 +238,19 @@ class GreenhouseAdapter(base.BaseAdapter):
         """Fill planned fields, upload resume, flag needs_input. Never submits."""
         filled = 0
         flagged: list[str] = []
-        try:
-            for fp in plan.fields:
-                if fp.needs_input or fp.source == "unmapped":
-                    self._flag(page, fp)
-                    flagged.append(fp.field.label or fp.field.key)
-                    continue
+        for fp in plan.fields:
+            if fp.needs_input or fp.source == "unmapped":
+                self._flag(page, fp)
+                flagged.append(fp.field.label or fp.field.key)
+                continue
+            try:
                 if self._fill_one(page, fp, plan):
                     filled += 1
-        except Exception as exc:  # noqa: BLE001 - report, don't crash the run
-            return FillResult(
-                status="failed",
-                filled_count=filled,
-                needs_input_labels=flagged,
-                error=f"{type(exc).__name__}: {exc}",
-            )
+            except Exception as exc:  # noqa: BLE001 - flag this field, keep filling the rest
+                fp.needs_input = True
+                fp.note = f"fill error: {type(exc).__name__}"
+                self._flag(page, fp)
+                flagged.append(fp.field.label or fp.field.key)
 
         required_unresolved = [
             fp.field.label or fp.field.key
@@ -321,7 +319,20 @@ class GreenhouseAdapter(base.BaseAdapter):
         loc.fill("")
         loc.type(value, delay=10)
         option = page.locator('[role="option"]', has_text=value).first
-        option.wait_for(state="visible", timeout=5000)
+        try:
+            option.wait_for(state="visible", timeout=3000)
+        except Exception:  # noqa: BLE001 - option text rarely matches verbatim
+            # async lists match loosely ("University of California San Diego"):
+            # retry on the first couple of words, else take the top suggestion.
+            head = " ".join(value.split()[:3])
+            loc.fill("")
+            loc.type(head, delay=10)
+            option = page.locator('[role="option"]', has_text=head).first
+            try:
+                option.wait_for(state="visible", timeout=3000)
+            except Exception:  # noqa: BLE001
+                option = page.locator('[role="option"]').first
+                option.wait_for(state="visible", timeout=3000)
         option.click()
         return True
 
