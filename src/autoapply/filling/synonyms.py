@@ -65,6 +65,11 @@ SYNONYMS: dict[str, list[str]] = {
     "education.0.degree": ["degree"],
     "education.0.major": ["major", "field of study", "discipline"],
     "education.0.gpa": ["gpa", "grade point"],
+    "education.0.start_month": ["start date month"],
+    "education.0.start_year": ["start date year"],
+    "education.0.end_month": ["end date month"],
+    "education.0.end_year": ["end date year", "graduation year"],
+    "education.0.end": ["graduation date", "anticipated graduation"],
 }
 
 # HTML autocomplete tokens -> dotted key (strongest signal, checked first).
@@ -105,3 +110,18 @@ def match_key(*, label: str, name: str, field_id: str, aria: str, autocomplete: 
 def _matches(pattern: str, haystack: str) -> bool:
     """Word-boundary containment so ``tel`` doesn't match ``tell us`` (SPEC.md §5.1)."""
     return re.search(rf"\b{re.escape(pattern.lower())}\b", haystack) is not None
+
+
+#: Canonical expansions tried (in order) when a constrained field's value is a
+#: common abbreviation that fuzzy-matching alone can't bridge ("B.S." vs
+#: "Bachelor's Degree"). Same fact, different spelling — never a new claim.
+VALUE_ALIASES: dict[str, tuple[str, ...]] = {
+    "b.s.": ("Bachelor of Science", "Bachelor's Degree", "Bachelors"),
+    "bs": ("Bachelor of Science", "Bachelor's Degree", "Bachelors"),
+    "b.a.": ("Bachelor of Arts", "Bachelor's Degree", "Bachelors"),
+    "m.s.": ("Master of Science", "Master's Degree", "Masters"),
+    "ms": ("Master of Science", "Master's Degree", "Masters"),
+    "m.a.": ("Master of Arts", "Master's Degree", "Masters"),
+    "phd": ("Doctor of Philosophy", "Doctorate", "PhD"),
+    "ph.d.": ("Doctor of Philosophy", "Doctorate", "PhD"),
+}

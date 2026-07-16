@@ -150,6 +150,11 @@ def _plan_field(
         if f.field_type in ("select", "radio", "combobox", "multiselect") and f.options:
             option, score = _fuzzy_option(value, f.options, threshold)
             if option is None:
+                for alias in synonyms.VALUE_ALIASES.get(value.strip().lower(), ()):
+                    option, score = _fuzzy_option(alias, f.options, threshold)
+                    if option is not None:
+                        break
+            if option is None:
                 return FieldPlan(
                     f, None, "unmapped", score / 100.0, True,
                     note=f"{key}={value!r} no option >= {threshold} (best {score:.0f})",

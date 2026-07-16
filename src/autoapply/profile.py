@@ -51,6 +51,38 @@ class Education(BaseModel):
     end: str = ""
     gpa: str = ""
 
+    # Derived date parts for ATS month/year sub-fields ("YYYY-MM" -> parts).
+    @property
+    def start_year(self) -> str:
+        return self.start.split("-")[0] if self.start else ""
+
+    @property
+    def start_month(self) -> str:
+        return _month_name(self.start)
+
+    @property
+    def end_year(self) -> str:
+        return self.end.split("-")[0] if self.end else ""
+
+    @property
+    def end_month(self) -> str:
+        return _month_name(self.end)
+
+
+_MONTHS = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+
+def _month_name(ym: str) -> str:
+    """"2021-08" -> "August"; empty/uparseable -> ""."""
+    parts = ym.split("-")
+    if len(parts) < 2 or not parts[1].isdigit():
+        return ""
+    m = int(parts[1])
+    return _MONTHS[m - 1] if 1 <= m <= 12 else ""
+
 
 class Experience(BaseModel):
     model_config = ConfigDict(extra="forbid")
