@@ -61,6 +61,8 @@ SYNONYMS: dict[str, list[str]] = {
     # Documents
     "documents.resume": ["resume", "cv", "upload resume", "attach resume"],
     # Education (first entry used by the mapper)
+    "experience.0.title": ["current position", "current title", "current role", "job title"],
+    "experience.0.company": ["current company", "current employer", "most recent company"],
     "education.0.school": ["school", "university", "college", "institution"],
     "education.0.degree": ["degree"],
     "education.0.major": ["major", "field of study", "discipline"],
