@@ -161,6 +161,12 @@ def _plan_field(
                 )
             return FieldPlan(f, option, "profile", score / 100.0, False, note=f"{key} -> option")
 
+        # Constrained widget whose options load asynchronously (extract saw
+        # none): plan the canonical value anyway — adapters fill comboboxes by
+        # type-ahead, so the widget itself constrains the final choice.
+        if f.field_type in ("combobox", "select") and not f.options:
+            return FieldPlan(f, value, "profile", 0.6, False, note=f"{key} (type-ahead)")
+
         return FieldPlan(f, value, "profile", 1.0, False, note=key)
 
     # 4. Unmapped free-text -> LLM (if cached) else needs_input.
