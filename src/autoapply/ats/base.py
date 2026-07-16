@@ -214,9 +214,13 @@ class BaseAdapter(ABC):
     #: Confirmation needles checked (lowercased) after a submit click.
     _CONFIRMATION_NEEDLES: ClassVar[tuple[str, ...]] = (
         "thank you for applying",
+        "thank you for your application",
+        "thank you for your interest",
         "application submitted",
         "application received",
+        "application has been received",
         "we have received your application",
+        "we've received your application",
         "your application has been submitted",
     )
 
@@ -234,7 +238,10 @@ class BaseAdapter(ABC):
         except Exception as e:  # noqa: BLE001 - report, never raise mid-run
             return FillResult(status="failed", error=f"submit click failed: {e}")
         html = page.content().lower()
-        confirmed = any(n in html for n in self._CONFIRMATION_NEEDLES)
+        confirmed = (
+            any(n in html for n in self._CONFIRMATION_NEEDLES)
+            or "confirmation" in page.url.lower()
+        )
         return FillResult(
             status="submitted" if confirmed else "filled",
             confirmation_detected=confirmed,
