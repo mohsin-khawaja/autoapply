@@ -322,17 +322,15 @@ class GreenhouseAdapter(base.BaseAdapter):
         try:
             option.wait_for(state="visible", timeout=3000)
         except Exception:  # noqa: BLE001 - option text rarely matches verbatim
-            # async lists match loosely ("University of California San Diego"):
-            # retry on the first couple of words, else take the top suggestion.
-            head = " ".join(value.split()[:3])
+            # Fixed lists filter by substring ("B.S." / "Bachelor of Science"
+            # both miss "Bachelor's Degree"): retype the first word and take the
+            # first option that contains it. Never pick an unfiltered option
+            # blind — a wrong Degree is worse than a flagged one.
+            head = value.split()[0].rstrip(",")
             loc.fill("")
             loc.type(head, delay=10)
             option = page.locator('[role="option"]', has_text=head).first
-            try:
-                option.wait_for(state="visible", timeout=3000)
-            except Exception:  # noqa: BLE001
-                option = page.locator('[role="option"]').first
-                option.wait_for(state="visible", timeout=3000)
+            option.wait_for(state="visible", timeout=3000)
         option.click()
         return True
 

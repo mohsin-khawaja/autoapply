@@ -42,7 +42,7 @@ SYNONYMS: dict[str, list[str]] = {
     "answers.willing_to_relocate": ["relocate", "willing to relocate", "relocation"],
     "answers.remote_ok": ["remote", "work remotely", "open to remote"],
     "answers.start_date": [
-        "start date", "available start", "when can you start", "availability",
+        "available start", "when can you start", "availability", "earliest start",
     ],
     "answers.salary_expectation": [
         "salary", "compensation expectation", "expected salary", "pay expectation",

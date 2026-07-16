@@ -165,7 +165,9 @@ def _plan_field(
         # none): plan the canonical value anyway — adapters fill comboboxes by
         # type-ahead, so the widget itself constrains the final choice.
         if f.field_type in ("combobox", "select") and not f.options:
-            return FieldPlan(f, value, "profile", 0.6, False, note=f"{key} (type-ahead)")
+            aliases = synonyms.VALUE_ALIASES.get(value.strip().lower())
+            typed = aliases[0] if aliases else value
+            return FieldPlan(f, typed, "profile", 0.6, False, note=f"{key} (type-ahead)")
 
         return FieldPlan(f, value, "profile", 1.0, False, note=key)
 
