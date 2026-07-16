@@ -35,6 +35,7 @@ WORKDAY_SITES: dict[str, tuple[str, str, str]] = {
     "Intel": ("intel.wd1", "intel", "External"),
     "Dell": ("dell.wd1", "dell", "External"),
     "PayPal": ("paypal.wd1", "paypal", "jobs"),
+    "Workday": ("workday.wd5", "workday", "Workday"),
 }
 
 IBM_SEARCH_URL = "https://www-api.ibm.com/search/api/v2"
