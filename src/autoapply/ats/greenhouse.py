@@ -313,20 +313,29 @@ class GreenhouseAdapter(base.BaseAdapter):
         return True
 
     def _fill_combobox(self, page: Page, selector: str, value: str) -> bool:
-        """React-select style: click, type, pick the matching option."""
+        """Open the listbox; pick directly when options are static, else type-ahead.
+
+        Yes/No style comboboxes show their options on click and don't filter as
+        you type (typing can even close them), so try click-and-pick before any
+        typing. Never pick an option the value didn't select — a wrong Degree
+        is worse than a flagged one.
+        """
         loc = page.locator(selector)
         loc.click()
+        exact = page.get_by_role("option", name=value, exact=True).first
+        try:
+            exact.wait_for(state="visible", timeout=1500)
+            exact.click()
+            return True
+        except Exception:  # noqa: BLE001 - not a static list (or no exact match)
+            pass
         loc.fill("")
         loc.type(value, delay=10)
         option = page.locator('[role="option"]', has_text=value).first
         try:
             option.wait_for(state="visible", timeout=3000)
-        except Exception:  # noqa: BLE001 - option text rarely matches verbatim
-            # Fixed lists filter by substring ("B.S." / "Bachelor of Science"
-            # both miss "Bachelor's Degree"): retype the first word and take the
-            # first option that contains it. Never pick an unfiltered option
-            # blind — a wrong Degree is worse than a flagged one.
-            head = value.split()[0].rstrip(",")
+        except Exception:  # noqa: BLE001 - filter text rarely matches verbatim
+            head = value.split()[0].rstrip(",:")
             loc.fill("")
             loc.type(head, delay=10)
             option = page.locator('[role="option"]', has_text=head).first
