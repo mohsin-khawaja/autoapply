@@ -176,7 +176,9 @@ th{color:var(--muted);font-weight:600;text-align:left;padding:8px 10px;
 td{padding:8px 10px;border-bottom:1px solid var(--grid)}
 td.num{font-variant-numeric:tabular-nums;text-align:right;font-weight:600}
 tr:hover td{background:color-mix(in srgb,var(--s1) 6%,transparent)}
-a{color:var(--s1);text-decoration:none} a:hover{text-decoration:underline}
+a{color:var(--s1);text-decoration:none}
+code.copyid{cursor:pointer;font-size:11.5px;color:var(--muted);border:1px solid var(--ring);
+  border-radius:6px;padding:2px 6px} code.copyid:hover{color:var(--ink)} a:hover{text-decoration:underline}
 .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2)}
 .pill::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--dot,var(--muted))}
 .count{color:var(--muted);font-size:12px;margin-left:auto}
@@ -212,7 +214,7 @@ a{color:var(--s1);text-decoration:none} a:hover{text-decoration:underline}
   <div style="overflow-x:auto"><table id="tbl">
     <thead><tr><th data-k="score">Score</th><th data-k="company_name">Company</th>
     <th data-k="title">Title</th><th data-k="ats">ATS</th><th>Location</th>
-    <th data-k="app_status">Application</th></tr></thead><tbody></tbody>
+    <th data-k="app_status">Application</th><th>Open</th></tr></thead><tbody></tbody>
   </table></div>
 </div>
 <div id="tip"></div>
@@ -322,7 +324,11 @@ function renderTable(){
     <td>${esc(j.ats||"—")}</td>
     <td>${esc(j.locations.slice(0,2).join(", ")||"—")}</td>
     <td>${j.app_status?`<span class="pill" style="--dot:${STATUS_DOT[j.app_status]||"var(--muted)"}">${esc(j.app_status)}</span>`:'<span style="color:var(--muted)">—</span>'}</td>
+    <td><code class="copyid" data-id="${esc(j.id)}" title="click: copy \`autoapply open ${esc(j.id.slice(0,8))}\`">${esc(j.id.slice(0,8))}</code></td>
   </tr>`).join("");
+  document.querySelectorAll(".copyid").forEach(c=>c.addEventListener("click",()=>{
+    navigator.clipboard.writeText("uv run autoapply open "+c.dataset.id);
+    c.textContent="copied!"; setTimeout(()=>c.textContent=c.dataset.id.slice(0,8),900);}));
 }
 $("#q").addEventListener("input",renderTable);
 $("#fats").addEventListener("change",renderTable);
