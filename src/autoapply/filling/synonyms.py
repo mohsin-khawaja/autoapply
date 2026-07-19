@@ -126,4 +126,11 @@ VALUE_ALIASES: dict[str, tuple[str, ...]] = {
     "m.a.": ("Master of Arts", "Master's Degree", "Masters"),
     "phd": ("Doctor of Philosophy", "Doctorate", "PhD"),
     "ph.d.": ("Doctor of Philosophy", "Doctorate", "PhD"),
+    # School lists disagree on the UC naming convention; all are the same school.
+    "university of california, san diego": (
+        "University of California, San Diego",
+        "University of California San Diego",
+        "UC San Diego",
+        "UCSD",
+    ),
 }

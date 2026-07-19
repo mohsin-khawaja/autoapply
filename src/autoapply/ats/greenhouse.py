@@ -317,9 +317,13 @@ class GreenhouseAdapter(base.BaseAdapter):
 
         Yes/No style comboboxes show their options on click and don't filter as
         you type (typing can even close them), so try click-and-pick before any
-        typing. Never pick an option the value didn't select — a wrong Degree
-        is worse than a flagged one.
+        typing. Lists also disagree on canonical spellings ("UC San Diego" /
+        "University of California, San Diego"), so every VALUE_ALIASES variant
+        is tried before giving up. Never pick an option the typed text didn't
+        select — a wrong School is worse than a flagged one.
         """
+        from autoapply.filling.synonyms import VALUE_ALIASES
+
         loc = page.locator(selector)
         loc.click()
         exact = page.get_by_role("option", name=value, exact=True).first
@@ -329,19 +333,24 @@ class GreenhouseAdapter(base.BaseAdapter):
             return True
         except Exception:  # noqa: BLE001 - not a static list (or no exact match)
             pass
-        loc.fill("")
-        loc.type(value, delay=10)
-        option = page.locator('[role="option"]', has_text=value).first
-        try:
-            option.wait_for(state="visible", timeout=3000)
-        except Exception:  # noqa: BLE001 - filter text rarely matches verbatim
-            head = value.split()[0].rstrip(",:")
+
+        candidates = [value, value.replace(",", "")]
+        candidates += list(VALUE_ALIASES.get(value.strip().lower(), ()))
+        seen: set[str] = set()
+        for cand in candidates:
+            if cand.lower() in seen:
+                continue
+            seen.add(cand.lower())
             loc.fill("")
-            loc.type(head, delay=10)
-            option = page.locator('[role="option"]', has_text=head).first
-            option.wait_for(state="visible", timeout=3000)
-        option.click()
-        return True
+            loc.type(cand, delay=10)
+            option = page.locator('[role="option"]', has_text=cand).first
+            try:
+                option.wait_for(state="visible", timeout=2500)
+                option.click()
+                return True
+            except Exception:  # noqa: BLE001 - try the next spelling
+                continue
+        raise TimeoutError(f"no option matched any spelling of {value!r}")
 
     def _check_radio(self, page: Page, field: FormField, value: str) -> None:
         """Check the radio in the group whose label matches ``value``."""
