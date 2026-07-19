@@ -55,10 +55,10 @@ def _collect(db_path: Path) -> dict:
                 (since,),
             )
         ]
-        apps = [
+        app_rows = [
             dict(r)
             for r in conn.execute(
-                """SELECT a.status, a.filled_at, a.submitted_at, a.screenshot, a.notes,
+                """SELECT a.job_id, a.status, a.filled_at, a.submitted_at, a.screenshot, a.notes,
                           j.company_name, j.title, COALESCE(j.final_url, j.url) AS url
                    FROM applications a JOIN jobs j ON j.id = a.job_id
                    ORDER BY COALESCE(a.submitted_at, a.filled_at, '') DESC, a.id DESC"""
@@ -88,7 +88,7 @@ def _collect(db_path: Path) -> dict:
             "by_ats": by_ats,
             "app_status": app_status,
             "by_day": by_day,
-            "applications": apps,
+            "applications": app_rows,
             "jobs": jobs,
             "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         }
@@ -99,7 +99,22 @@ def _collect(db_path: Path) -> dict:
 def make_handler(db_path: Path) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 - stdlib API
-            if self.path.split("?")[0] == "/api/data":
+            if self.path.split("?")[0] == "/shot":
+                from urllib.parse import parse_qs, urlparse
+
+                job = parse_qs(urlparse(self.path).query).get("job", [""])[0]
+                conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+                row = conn.execute(
+                    "SELECT screenshot FROM applications WHERE job_id = ?", (job,)
+                ).fetchone()
+                conn.close()
+                shot = Path(row[0]) if row and row[0] else None
+                if shot is None or not shot.exists():
+                    self.send_error(404)
+                    return
+                body = shot.read_bytes()
+                ctype = "image/png"
+            elif self.path.split("?")[0] == "/api/data":
                 body = json.dumps(_collect(db_path)).encode()
                 ctype = "application/json"
             elif self.path.split("?")[0] == "/":
@@ -192,6 +207,11 @@ code.copyid{cursor:pointer;font-size:11.5px;color:var(--muted);border:1px solid 
   <div class="card"><h2>Jobs by ATS</h2><div id="ats"></div></div>
   <div class="card"><h2>Postings per day — last 30 days</h2><div id="days"></div></div>
   <div class="card"><h2>Applications by status</h2><div id="apps"></div></div>
+</div>
+<div class="card" id="todocard" style="margin-bottom:16px">
+  <div class="controls"><h2 style="margin:0">Finish manually — needs you</h2>
+    <span class="count" id="tn"></span></div>
+  <div id="todo"></div>
 </div>
 <div class="card" id="appcard" style="margin-bottom:16px">
   <div class="controls">
@@ -292,6 +312,24 @@ function line(el,data){
 }
 
 let APPS=[];
+function renderTodo(){
+  const todo=APPS.filter(a=>a.status==="needs_input"||a.status==="manual");
+  $("#tn").textContent=`${todo.length} waiting`;
+  $("#todo").innerHTML=todo.length?todo.map(a=>{
+    let miss=[]; try{miss=JSON.parse(a.notes||"[]")}catch(e){miss=a.notes?[a.notes]:[]}
+    if(!Array.isArray(miss)) miss=[String(miss)];
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--grid)">
+      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+        <span class="pill" style="--dot:${STATUS_DOT[a.status]||"var(--muted)"}">${esc(a.status)}</span>
+        <strong>${esc(a.company_name)}</strong>
+        <a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)} ↗</a>
+        ${a.screenshot?`<a href="/shot?job=${esc(a.job_id)}" target="_blank">screenshot</a>`:""}
+      </div>
+      ${miss.length?`<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${
+        miss.slice(0,8).map(m=>`<span style="font-size:11.5px;color:var(--ink-2);border:1px solid var(--ring);border-radius:6px;padding:2px 8px">${esc(String(m).slice(0,60))}</span>`).join("")
+      }${miss.length>8?`<span style="font-size:11.5px;color:var(--muted)">+${miss.length-8} more</span>`:""}</div>`:""}
+    </div>`}).join(""):'<div class="empty">nothing waiting on you 🎉</div>';
+}
 function renderApps(){
   const fs=$("#fstatus").value;
   const rows=APPS.filter(a=>!fs||a.status===fs);
@@ -350,7 +388,7 @@ fetch("/api/data").then(r=>r.json()).then(d=>{
   $("#fstatus").innerHTML='<option value="">All statuses</option>'+
     [...new Set(APPS.map(a=>a.status))].sort().map(x=>`<option>${esc(x)}</option>`).join("");
   $("#fstatus").addEventListener("change",renderApps);
-  renderApps();
+  renderApps(); renderTodo();
   document.querySelectorAll("#tiles .tile")[2].style.cursor="pointer";
   document.querySelectorAll("#tiles .tile")[2].addEventListener("click",()=>{
     $("#fstatus").value=""; renderApps();
