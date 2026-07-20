@@ -238,7 +238,11 @@ class GreenhouseAdapter(base.BaseAdapter):
         """Fill planned fields, upload resume, flag needs_input. Never submits."""
         filled = 0
         flagged: list[str] = []
-        for fp in plan.fields:
+        # File uploads last: greenhouse's autofill-from-resume re-renders the
+        # form after upload and clobbers fields mid-type if filled after it.
+        ordered = [fp for fp in plan.fields if fp.field.field_type != "file"]
+        ordered += [fp for fp in plan.fields if fp.field.field_type == "file"]
+        for fp in ordered:
             if fp.needs_input or fp.source == "unmapped":
                 self._flag(page, fp)
                 flagged.append(fp.field.label or fp.field.key)
