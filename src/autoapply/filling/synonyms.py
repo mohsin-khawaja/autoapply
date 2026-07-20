@@ -25,7 +25,10 @@ SYNONYMS: dict[str, list[str]] = {
     "identity.links.linkedin": ["linkedin"],
     "identity.links.github": ["github"],
     "identity.links.website": ["website", "portfolio", "personal site", "personal website"],
-    "identity.location.city": ["city", "current city"],
+    "identity.location.city": [
+        "city", "current city", "where are you currently located", "where are you located",
+        "current location", "location (city)",
+    ],
     "identity.location.state": ["state", "province", "region"],
     "identity.location.country": ["country"],
     # Screener answers (see profile.answers.*)
