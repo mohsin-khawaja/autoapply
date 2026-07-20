@@ -337,7 +337,12 @@ class GreenhouseAdapter(base.BaseAdapter):
 
         loc = page.locator(selector)
         loc.click()
-        exact = page.get_by_role("option", name=value, exact=True).first
+        # Scope option lookups to THIS combobox's listbox (aria-controls);
+        # other widgets (the phone country list) keep [role=option] nodes
+        # mounted globally and pollute unscoped queries.
+        listbox_id = loc.get_attribute("aria-controls") or loc.get_attribute("aria-owns")
+        scope = page.locator(f"#{listbox_id}") if listbox_id else page
+        exact = scope.get_by_role("option", name=value, exact=True).first
         try:
             exact.wait_for(state="visible", timeout=1500)
             exact.click()
@@ -345,7 +350,7 @@ class GreenhouseAdapter(base.BaseAdapter):
         except Exception:  # noqa: BLE001 - not a static list (or no exact match)
             pass
 
-        candidates = [value, value.replace(",", "")]
+        candidates = [value, value.replace(",", ""), value.replace(", ", " - ")]
         candidates += list(VALUE_ALIASES.get(value.strip().lower(), ()))
         seen: set[str] = set()
         for cand in candidates:
@@ -354,9 +359,9 @@ class GreenhouseAdapter(base.BaseAdapter):
             seen.add(cand.lower())
             loc.fill("")
             loc.type(cand, delay=10)
-            option = page.locator('[role="option"]', has_text=cand).first
+            option = scope.locator('[role="option"]', has_text=cand).first
             try:
-                option.wait_for(state="visible", timeout=2500)
+                option.wait_for(state="visible", timeout=3500)
                 option.click()
                 return True
             except Exception:  # noqa: BLE001 - try the next spelling

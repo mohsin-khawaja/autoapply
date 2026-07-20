@@ -135,8 +135,10 @@ VALUE_ALIASES: dict[str, tuple[str, ...]] = {
     # School lists disagree on the UC naming convention; all are the same school.
     "university of california, san diego": (
         "University of California, San Diego",
+        "University of California - San Diego",
         "University of California San Diego",
         "UC San Diego",
         "UCSD",
+        "San Diego",
     ),
 }
