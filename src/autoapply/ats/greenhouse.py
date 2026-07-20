@@ -350,7 +350,8 @@ class GreenhouseAdapter(base.BaseAdapter):
         except Exception:  # noqa: BLE001 - not a static list (or no exact match)
             pass
 
-        candidates = [value, value.replace(",", ""), value.replace(", ", " - ")]
+        head = value.split(":")[0].strip()
+        candidates = [value, value.replace(",", ""), value.replace(", ", " - "), head]
         candidates += list(VALUE_ALIASES.get(value.strip().lower(), ()))
         seen: set[str] = set()
         for cand in candidates:
