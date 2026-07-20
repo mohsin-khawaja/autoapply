@@ -16,6 +16,7 @@ import re
 
 # Ordered: more specific keys first so e.g. "linkedin" beats a generic "url".
 SYNONYMS: dict[str, list[str]] = {
+    "identity.full_name": ["full legal name", "full name", "legal name"],
     "identity.first_name": ["first name", "given name", "first_name", "given-name", "fname"],
     "identity.last_name": [
         "last name", "family name", "surname", "last_name", "family-name", "lname",
@@ -138,6 +139,11 @@ VALUE_ALIASES: dict[str, tuple[str, ...]] = {
     "cognitive science": ("Cognitive Science", "Other"),
     # "How did you hear" lists rarely include a company-website entry verbatim.
     "company website": ("Company website", "Company Website", "Careers page", "Other"),
+    # Self-ID "decline" phrasings differ per form; all mean the same choice.
+    "decline": (
+        "Decline To Self Identify", "I prefer not to say", "Prefer not to say",
+        "I don't wish to answer", "Decline to state",
+    ),
     # School lists disagree on the UC naming convention; all are the same school.
     "university of california, san diego": (
         "University of California, San Diego",

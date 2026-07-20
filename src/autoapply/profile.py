@@ -31,6 +31,10 @@ class Links(BaseModel):
 
 
 class Identity(BaseModel):
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}".strip()
+
     model_config = ConfigDict(extra="forbid")
     first_name: str
     last_name: str
