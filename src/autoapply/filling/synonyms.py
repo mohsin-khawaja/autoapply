@@ -126,6 +126,12 @@ VALUE_ALIASES: dict[str, tuple[str, ...]] = {
     "m.a.": ("Master of Arts", "Master's Degree", "Masters"),
     "phd": ("Doctor of Philosophy", "Doctorate", "PhD"),
     "ph.d.": ("Doctor of Philosophy", "Doctorate", "PhD"),
+    # Discipline taxonomies rarely list this exact major; "Other" is the
+    # truthful pick when the real one is absent (tried last).
+    "cognitive science: machine learning & neural computation": (
+        "Cognitive Science",
+        "Other",
+    ),
     # School lists disagree on the UC naming convention; all are the same school.
     "university of california, san diego": (
         "University of California, San Diego",
