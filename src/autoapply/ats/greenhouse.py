@@ -282,6 +282,13 @@ class GreenhouseAdapter(base.BaseAdapter):
             if path is None:
                 return False
             page.set_input_files(field.selector, str(path))
+            # Resume upload triggers autofill-from-resume: the form re-renders
+            # while later fields are being typed into. Let it settle first.
+            try:
+                page.wait_for_load_state("networkidle", timeout=10_000)
+            except Exception:  # noqa: BLE001 - busy pages never go idle
+                pass
+            page.wait_for_timeout(1_500)
             return True
 
         if fp.value is None:
