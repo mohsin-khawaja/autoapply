@@ -133,6 +133,8 @@ VALUE_ALIASES: dict[str, tuple[str, ...]] = {
         "Other",
     ),
     "cognitive science": ("Cognitive Science", "Other"),
+    # "How did you hear" lists rarely include a company-website entry verbatim.
+    "company website": ("Company website", "Company Website", "Careers page", "Other"),
     # School lists disagree on the UC naming convention; all are the same school.
     "university of california, san diego": (
         "University of California, San Diego",
