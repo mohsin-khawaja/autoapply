@@ -63,6 +63,8 @@ SYNONYMS: dict[str, list[str]] = {
         "race", "ethnicity", "hispanic or latino", "hispanic/latino", "hispanic",
         "racial", "ethnic background",
     ],
+    "answers.eeo.orientation": ["sexual orientation"],
+    "answers.eeo.transgender": ["transgender"],
     "answers.eeo.veteran": ["veteran", "protected veteran"],
     "answers.eeo.disability": ["disability", "disabled"],
     # Documents

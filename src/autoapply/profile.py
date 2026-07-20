@@ -124,6 +124,8 @@ class EEO(BaseModel):
     race: str = "decline"
     veteran: str = "I am not a protected veteran"
     disability: str = "I do not want to answer"
+    orientation: str = "decline"
+    transgender: str = "decline"
 
 
 class Answers(BaseModel):
