@@ -59,7 +59,10 @@ SYNONYMS: dict[str, list[str]] = {
     "answers.security_clearance": ["security clearance", "clearance"],
     # EEO / voluntary self-id
     "answers.eeo.gender": ["gender"],
-    "answers.eeo.race": ["race", "ethnicity", "hispanic or latino", "hispanic/latino", "hispanic"],
+    "answers.eeo.race": [
+        "race", "ethnicity", "hispanic or latino", "hispanic/latino", "hispanic",
+        "racial", "ethnic background",
+    ],
     "answers.eeo.veteran": ["veteran", "protected veteran"],
     "answers.eeo.disability": ["disability", "disabled"],
     # Documents
