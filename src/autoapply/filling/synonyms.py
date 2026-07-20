@@ -149,6 +149,10 @@ VALUE_ALIASES: dict[str, tuple[str, ...]] = {
         "Decline To Self Identify", "I prefer not to say", "Prefer not to say",
         "I don't wish to answer", "Decline to state",
     ),
+    "i do not want to answer": (
+        "I do not want to answer", "I prefer not to say", "Prefer not to say",
+        "I don't wish to answer", "Decline To Self Identify",
+    ),
     # School lists disagree on the UC naming convention; all are the same school.
     "university of california, san diego": (
         "University of California, San Diego",
