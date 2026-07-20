@@ -149,6 +149,10 @@ VALUE_ALIASES: dict[str, tuple[str, ...]] = {
         "Decline To Self Identify", "I prefer not to say", "Prefer not to say",
         "I don't wish to answer", "Decline to state",
     ),
+    # "Not a protected veteran" == "No" on yes/no veteran questions.
+    "i am not a protected veteran": (
+        "I am not a protected veteran", "No, I am not a protected veteran", "No",
+    ),
     "i do not want to answer": (
         "I do not want to answer", "I prefer not to say", "Prefer not to say",
         "I don't wish to answer", "Decline To Self Identify",
