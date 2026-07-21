@@ -199,12 +199,14 @@ def process_one(
     print_plan(plan)
 
     if auto_submit and adapter.kind in settings.auto_submit_allowlist and not plan.unresolved:
-        sub = adapter.submit(page)
-        status = "submitted" if sub.confirmation_detected else "filled"
+        after = run_dir / f"{plan.job_id[:12]}-submitted.png"
+        sub = adapter.submit(page, after)
+        status = sub.status  # submitted | needs_input (bounced) | filled | failed
+        proof = str(after) if after.exists() else str(shot)
         db.record_application(
             conn, job_id=job.job_id, status=status, filled_at=now(),
             submitted_at=now() if status == "submitted" else None,
-            screenshot=str(shot), notes=sub.notes,
+            screenshot=proof, notes=sub.notes,
         )
         return status
 

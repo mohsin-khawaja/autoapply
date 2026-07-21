@@ -224,28 +224,70 @@ class BaseAdapter(ABC):
         "your application has been submitted",
     )
 
-    def submit(self, page: Page) -> FillResult:
-        """Click the form's Submit and detect the confirmation page/text.
+    def submit(self, page: Page, shot_path: Path | None = None) -> FillResult:
+        """Click the form's Submit and PROVE the outcome (SPEC §1).
+
+        Submission is confirmed only on positive evidence: confirmation text, a
+        thank-you/confirmation URL, or the application form disappearing. If the
+        form is still present with visible validation errors, the click bounced
+        — reported as ``needs_input`` (NOT submitted), never as a false success.
+        A post-submit screenshot is captured at ``shot_path`` as proof.
 
         DANGER: only invoked when ``--auto-submit`` is set AND this adapter's
-        :attr:`kind` is on the config allowlist (SPEC §1). Never call this from
-        :meth:`fill`.
+        :attr:`kind` is on the config allowlist. Never call this from :meth:`fill`.
         """
+        url_before = page.url
+        form = page.locator("form").first
         button = page.locator("button[type=submit], input[type=submit]").first
         try:
             button.click()
             page.wait_for_load_state("networkidle", timeout=15_000)
         except Exception as e:  # noqa: BLE001 - report, never raise mid-run
             return FillResult(status="failed", error=f"submit click failed: {e}")
+
+        page.wait_for_timeout(1_500)  # let confirmation render / errors surface
+        if shot_path is not None:
+            try:
+                page.screenshot(path=str(shot_path), full_page=True)
+            except Exception:  # noqa: BLE001 - proof is best-effort
+                pass
+
         html = page.content().lower()
-        confirmed = (
-            any(n in html for n in self._CONFIRMATION_NEEDLES)
-            or "confirmation" in page.url.lower()
-        )
+        text_hit = any(n in html for n in self._CONFIRMATION_NEEDLES)
+        url_hit = any(w in page.url.lower() for w in ("confirmation", "thank", "submitted"))
+        form_gone = False
+        try:
+            form_gone = form.count() == 0 or not form.is_visible()
+        except Exception:  # noqa: BLE001
+            form_gone = False
+
+        # Validation errors still on screen => the submit did NOT go through.
+        error_visible = False
+        try:
+            errs = page.locator("[aria-invalid='true'], .field-error, [class*='error']:visible")
+            error_visible = errs.count() > 0 and errs.first.is_visible()
+        except Exception:  # noqa: BLE001
+            error_visible = False
+
+        positive = text_hit or url_hit or (form_gone and page.url != url_before)
+        confirmed = positive and not error_visible
+        if confirmed:
+            why = (
+                "confirmation text" if text_hit
+                else "confirmation url" if url_hit
+                else "form cleared"
+            )
+            return FillResult(
+                status="submitted", confirmation_detected=True, notes=f"submitted — {why}"
+            )
+        if error_visible:
+            return FillResult(
+                status="needs_input", confirmation_detected=False,
+                notes="submit rejected — validation errors remain; not submitted",
+            )
         return FillResult(
-            status="submitted" if confirmed else "filled",
-            confirmation_detected=confirmed,
-            notes="confirmation detected" if confirmed else "no confirmation text found",
+            status="filled", confirmation_detected=False,
+            notes="submit clicked but no confirmation detected — verify manually",
         )
 
 
