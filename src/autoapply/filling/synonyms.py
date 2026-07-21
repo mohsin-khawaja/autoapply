@@ -74,7 +74,9 @@ SYNONYMS: dict[str, list[str]] = {
     "experience.0.title": ["current position", "current title", "current role", "job title"],
     "experience.0.company": ["current company", "current employer", "most recent company"],
     "education.0.school": ["school", "university", "college", "institution"],
-    "education.0.degree": ["degree"],
+    "education.0.degree": [
+        "degree", "highest level of education", "highest education", "education level",
+    ],
     "education.0.major": ["major", "field of study", "discipline"],
     "education.0.gpa": ["gpa", "grade point"],
     "education.0.start_month": ["start date month"],
@@ -128,8 +130,8 @@ def _matches(pattern: str, haystack: str) -> bool:
 #: common abbreviation that fuzzy-matching alone can't bridge ("B.S." vs
 #: "Bachelor's Degree"). Same fact, different spelling — never a new claim.
 VALUE_ALIASES: dict[str, tuple[str, ...]] = {
-    "b.s.": ("Bachelor of Science", "Bachelor's Degree", "Bachelors"),
-    "bs": ("Bachelor of Science", "Bachelor's Degree", "Bachelors"),
+    "b.s.": ("Bachelor of Science", "Bachelor's Degree", "Bachelors", "Bachelor's"),
+    "bs": ("Bachelor of Science", "Bachelor's Degree", "Bachelors", "Bachelor's"),
     "b.a.": ("Bachelor of Arts", "Bachelor's Degree", "Bachelors"),
     "m.s.": ("Master of Science", "Master's Degree", "Masters"),
     "ms": ("Master of Science", "Master's Degree", "Masters"),
