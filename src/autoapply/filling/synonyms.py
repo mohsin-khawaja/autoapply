@@ -28,13 +28,14 @@ SYNONYMS: dict[str, list[str]] = {
     "identity.links.website": ["website", "portfolio", "personal site", "personal website"],
     "identity.location.city": [
         "city", "current city", "where are you currently located", "where are you located",
-        "current location", "location (city)",
+        "current location", "location (city)", "your location", "where are you based",
     ],
     "identity.location.state": ["state", "province", "region"],
     "identity.location.country": ["country"],
     # Screener answers (see profile.answers.*)
     "answers.work_authorization_us": [
         "authorized to work", "work authorization", "legally authorized", "us work authorization",
+        "legally eligible to work", "eligible to work", "authorized to work in the united states",
     ],
     "answers.require_sponsorship": [
         "require sponsorship", "need sponsorship", "visa sponsorship", "sponsorship now",
