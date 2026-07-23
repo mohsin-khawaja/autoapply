@@ -55,6 +55,8 @@ SYNONYMS: dict[str, list[str]] = {
     "answers.how_did_you_hear": ["how did you hear", "referral source", "how did you find"],
     "answers.previously_employed_here": [
         "previously employed", "former employee", "worked here before",
+        "worked for", "worked at", "ever worked for", "ever worked at",
+        "previously worked",
     ],
     "answers.criminal_record_disclosures": ["criminal", "convicted", "felony"],
     "answers.security_clearance": ["security clearance", "clearance"],
