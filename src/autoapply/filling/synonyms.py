@@ -17,7 +17,9 @@ import re
 # Ordered: more specific keys first so e.g. "linkedin" beats a generic "url".
 SYNONYMS: dict[str, list[str]] = {
     "identity.full_name": ["full legal name", "full name", "legal name"],
-    "identity.first_name": ["first name", "given name", "first_name", "given-name", "fname"],
+    "identity.first_name": [
+        "first name", "given name", "first_name", "given-name", "fname", "preferred name",
+    ],
     "identity.last_name": [
         "last name", "family name", "surname", "last_name", "family-name", "lname",
     ],
@@ -31,12 +33,16 @@ SYNONYMS: dict[str, list[str]] = {
         "current location", "location (city)", "your location", "where are you based",
     ],
     "identity.location.state": ["state", "province", "region"],
-    "identity.location.country": ["country"],
     # Screener answers (see profile.answers.*)
+    # work-authorization is matched BEFORE location.country so a phrase like
+    # "authorization to work in the country where you live" doesn't get stolen
+    # by the bare "country" pattern.
     "answers.work_authorization_us": [
         "authorized to work", "work authorization", "legally authorized", "us work authorization",
         "legally eligible to work", "eligible to work", "authorized to work in the united states",
+        "authorization to work", "authorised to work",
     ],
+    "identity.location.country": ["country"],
     "answers.require_sponsorship": [
         "require sponsorship", "need sponsorship", "visa sponsorship", "sponsorship now",
     ],
