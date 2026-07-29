@@ -92,6 +92,25 @@ def sync(
     )
 
 
+@app.command()
+def referrals(
+    min_score: int = typer.Option(1, "--min-score", help="Skip postings below this fit."),
+) -> None:
+    """Pull postings from referral companies (Amazon, Odoo) and fit-score them."""
+    from autoapply.sources import referral
+
+    settings = load_settings()
+    settings.ensure_dirs()
+    with console.status("searching referral companies…"):
+        result = referral.scout(settings, min_score=min_score)
+    console.print(
+        f"[green]found[/] {result.fetched} postings — "
+        f"upserted {result.upserted}, score≥50 {result.scored_ge_50}"
+    )
+    for err in result.errors:
+        console.print(f"[yellow]![/] {err}")
+
+
 @app.command(name="list")
 def list_jobs(
     min_score: int = typer.Option(0, "--min-score", help="Only show jobs at/above this score."),
