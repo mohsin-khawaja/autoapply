@@ -180,6 +180,12 @@ def process_one(
     )
 
     client = OllamaClient(host=settings.ollama_host, model=settings.ollama_model)
+    # Run on whatever model this machine actually has pulled, so answer
+    # generation works offline without matching config exactly.
+    resolved = client.resolve_model(fallback=settings.ollama_fallback_model)
+    if resolved and resolved != client.model:
+        console.print(f"[dim]ollama: using {resolved}[/]")
+        client.model = resolved
     _fill_llm_answers(conn, plan, profile, job, client)
 
     if dry_run:

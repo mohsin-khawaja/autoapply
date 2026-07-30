@@ -60,7 +60,12 @@ def init() -> None:
         console.print(f"[yellow]![/] resume missing — drop it at {resume}")
 
     # Ollama
-    ok, msg = OllamaClient(host=settings.ollama_host, model=settings.ollama_model).health()
+    oc = OllamaClient(host=settings.ollama_host, model=settings.ollama_model)
+    ok, msg = oc.health()
+    if not ok:
+        resolved = oc.resolve_model(fallback=settings.ollama_fallback_model)
+        if resolved:
+            ok, msg = True, f"Ollama OK (using installed {resolved})"
     console.print(f"[{'green' if ok else 'yellow'}]{'✓' if ok else '!'}[/] {msg}")
 
     # Playwright chromium

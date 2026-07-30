@@ -41,6 +41,29 @@ class OllamaClient:
             )
         return True, f"Ollama OK ({self.model})"
 
+    def installed_models(self) -> list[str]:
+        """Model names Ollama currently has locally; empty if unreachable."""
+        try:
+            r = httpx.get(f"{self.host}/api/tags", timeout=5.0)
+            r.raise_for_status()
+        except httpx.HTTPError:
+            return []
+        return sorted(m.get("name", "") for m in r.json().get("models", []))
+
+    def resolve_model(self, *, fallback: str | None = None) -> str | None:
+        """Pick a usable local model: configured, else fallback, else any installed.
+
+        Keeps the tool working offline on whatever the machine actually has
+        pulled, instead of hard-failing on a model name from config.
+        """
+        installed = self.installed_models()
+        if not installed:
+            return None
+        for want in (self.model, fallback):
+            if want and any(m == want or m.startswith(want) for m in installed):
+                return next(m for m in installed if m == want or m.startswith(want))
+        return installed[0]
+
     def ensure_available(self) -> None:
         """Raise :class:`OllamaError` with fix instructions if not ready."""
         ok, msg = self.health()
