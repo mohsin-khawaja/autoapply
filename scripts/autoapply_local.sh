@@ -19,6 +19,9 @@ cd "$REPO"
 
 TOP_N="${TOP_N:-10}"          # how many jobs to queue per run
 MIN_SCORE="${MIN_SCORE:-60}"  # fit-score floor for queueing
+# ATS families allowed to auto-submit. A form still only submits when EVERY
+# required field filled from your profile — this just says which sites qualify.
+SUBMIT_ATS="${SUBMIT_ATS:-greenhouse,lever,ashby,generic}"
 SUBMIT=0
 FIND_ONLY=0
 for arg in "$@"; do
@@ -54,7 +57,8 @@ if [ "$SUBMIT" -eq 1 ]; then
   echo "==> 4/4  Hands-off: submitting clean forms, skipping any that need you"
   echo "    Real applications will be sent. Ctrl-C now to back out."
   sleep 3
-  AUTOAPPLY_AUTO_SUBMIT=greenhouse uv run autoapply run \
+  echo "    auto-submit enabled for: $SUBMIT_ATS"
+  AUTOAPPLY_AUTO_SUBMIT="$SUBMIT_ATS" uv run autoapply run \
     --auto-submit --unattended --max-per-run "$TOP_N"
 else
   echo "==> 4/4  Filling forms (review pause — you click Submit)"

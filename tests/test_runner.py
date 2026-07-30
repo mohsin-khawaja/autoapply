@@ -161,3 +161,114 @@ def test_unattended_flag_reaches_run_queue(monkeypatch):
     monkeypatch.setattr(runner_mod, "run_queue", fake_run_queue)
     CliRunner().invoke(cli.app, ["run", "--unattended", "--max-per-run", "2"])
     assert seen.get("unattended") is True
+
+
+def test_auto_submit_clicks_submit_when_fully_resolved(
+    monkeypatch, page, tmp_path, conn, feed_listings
+):
+    """The gate opens: allowlisted ATS + zero unresolved fields => submit() runs."""
+    from autoapply import runner
+    from autoapply.ats.base import ATSKind, FillResult
+    from autoapply.config import Settings
+    from autoapply.profile import Profile
+
+    _seed_jobs(conn, feed_listings)
+    enqueue(conn, ["bbbb2222"])
+    job = runner.queued_jobs(conn, 1)[0]
+
+    clicked: dict[str, bool] = {}
+
+    def fake_submit(self, page, shot_path=None):
+        clicked["yes"] = True
+        return FillResult(status="submitted", confirmation_detected=True, notes="confirmed")
+
+    # Fully-resolved plan so the gate's `not plan.unresolved` check passes.
+    def fake_build_plan(fields, profile, answers, job_ctx, **kw):
+        from autoapply.ats.base import FillPlan
+        return FillPlan(
+            job_id=job_ctx.id, job_url=kw["job_url"], ats=kw["ats"],
+            resume_path=None, fields=[],
+        )
+
+    monkeypatch.setattr(GreenhouseAdapter, "submit", fake_submit)
+    monkeypatch.setattr(runner.mapper, "build_plan", fake_build_plan)
+    monkeypatch.setattr(runner.base, "resolve_adapter", lambda url: GreenhouseAdapter)
+    monkeypatch.setattr(page, "goto", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "looks_blocked", lambda p: False)
+    monkeypatch.setattr(
+        GreenhouseAdapter, "extract_form",
+        lambda self, pg: [
+            base.FormField(key="k", field_type="text", label="Name", selector="#first_name")
+        ],
+    )
+    monkeypatch.setattr(
+        GreenhouseAdapter, "fill",
+        lambda self, page, plan: FillResult(status="filled", filled_count=3),
+    )
+    monkeypatch.setattr(runner.console, "input", lambda *a, **k: "")
+
+    settings = Settings(home=tmp_path)
+    settings.auto_submit_allowlist = {ATSKind.GREENHOUSE}
+    profile = Profile.model_validate(
+        {"identity": {"first_name": "T", "last_name": "U", "email": "t@e.com", "phone": "5",
+                      "location": {"city": "SD", "state": "CA", "country": "United States"}}}
+    )
+
+    page.goto((FIXTURES / "greenhouse_classic.html").as_uri())
+    status = runner.process_one(
+        page, job, conn=conn, profile=profile, settings=settings,
+        dry_run=False, auto_submit=True, unattended=True,
+    )
+
+    assert clicked.get("yes") is True, "submit() was never called"
+    assert status == "submitted"
+    row = conn.execute(
+        "SELECT status, submitted_at FROM applications WHERE job_id='bbbb2222'"
+    ).fetchone()
+    assert row["status"] == "submitted"
+    assert row["submitted_at"] is not None  # timestamped as really sent
+
+
+def test_auto_submit_withheld_when_ats_not_allowlisted(
+    monkeypatch, page, tmp_path, conn, feed_listings
+):
+    """An empty allowlist must never submit, even on a fully-resolved form."""
+    from autoapply import runner
+    from autoapply.ats.base import FillResult
+    from autoapply.config import Settings
+    from autoapply.profile import Profile
+
+    _seed_jobs(conn, feed_listings)
+    enqueue(conn, ["bbbb2222"])
+    job = runner.queued_jobs(conn, 1)[0]
+
+    def must_not_run(self, page, shot_path=None):
+        raise AssertionError("submit() ran with the ATS off the allowlist")
+
+    monkeypatch.setattr(GreenhouseAdapter, "submit", must_not_run)
+    monkeypatch.setattr(
+        GreenhouseAdapter, "fill",
+        lambda self, page, plan: FillResult(status="filled", filled_count=1),
+    )
+    monkeypatch.setattr(runner.base, "resolve_adapter", lambda url: GreenhouseAdapter)
+    monkeypatch.setattr(page, "goto", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "looks_blocked", lambda p: False)
+    monkeypatch.setattr(
+        GreenhouseAdapter, "extract_form",
+        lambda self, pg: [
+            base.FormField(key="k", field_type="text", label="Name", selector="#first_name")
+        ],
+    )
+    monkeypatch.setattr(runner.console, "input", lambda *a, **k: "")
+
+    settings = Settings(home=tmp_path)  # allowlist empty by default
+    profile = Profile.model_validate(
+        {"identity": {"first_name": "T", "last_name": "U", "email": "t@e.com", "phone": "5",
+                      "location": {"city": "SD", "state": "CA", "country": "United States"}}}
+    )
+    page.goto((FIXTURES / "greenhouse_classic.html").as_uri())
+    status = runner.process_one(
+        page, job, conn=conn, profile=profile, settings=settings,
+        dry_run=False, auto_submit=True, unattended=True,
+    )
+    assert status != "submitted"
