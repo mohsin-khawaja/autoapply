@@ -108,3 +108,56 @@ def test_cli_has_no_stubs_left():
     src = inspect.getsource(cli)
     assert "_MS2" not in src
     assert "[stub]" not in src
+
+
+def test_unattended_never_waits_for_input(monkeypatch, page, tmp_path, conn, feed_listings):
+    """--unattended records the outcome instead of blocking on console.input."""
+    from autoapply import runner
+    from autoapply.config import Settings
+    from autoapply.profile import Profile
+
+    _seed_jobs(conn, feed_listings)
+    enqueue(conn, ["bbbb2222"])  # a greenhouse-classified job
+
+    def boom(*a, **k):  # any prompt attempt is a failure of the contract
+        raise AssertionError("unattended run must not call console.input")
+
+    monkeypatch.setattr(runner.console, "input", boom)
+    profile = Profile.model_validate(
+        {
+            "identity": {
+                "first_name": "T", "last_name": "U", "email": "t@e.com", "phone": "5",
+                "location": {"city": "San Diego", "state": "CA", "country": "United States"},
+            }
+        }
+    )
+    settings = Settings(home=tmp_path)
+    job = runner.queued_jobs(conn, 1)[0]
+
+    page.goto((FIXTURES / "greenhouse_classic.html").as_uri())
+    status = runner.process_one(
+        page, job, conn=conn, profile=profile, settings=settings,
+        dry_run=False, auto_submit=False, unattended=True,
+    )
+    # Recorded without any prompt; a form needing a human lands as needs_input.
+    assert status in ("needs_input", "filled", "manual")
+    assert conn.execute(
+        "SELECT status FROM applications WHERE job_id='bbbb2222'"
+    ).fetchone()["status"] == status
+
+
+def test_unattended_flag_reaches_run_queue(monkeypatch):
+    """The CLI --unattended flag is plumbed through to run_queue."""
+    from typer.testing import CliRunner
+
+    import autoapply.runner as runner_mod
+    from autoapply import cli
+
+    seen = {}
+
+    def fake_run_queue(settings, **kw):
+        seen.update(kw)
+
+    monkeypatch.setattr(runner_mod, "run_queue", fake_run_queue)
+    CliRunner().invoke(cli.app, ["run", "--unattended", "--max-per-run", "2"])
+    assert seen.get("unattended") is True

@@ -132,8 +132,15 @@ def process_one(
     settings: Settings,
     dry_run: bool,
     auto_submit: bool,
+    unattended: bool = False,
 ) -> str:
-    """Run the pipeline for one queued job. Returns the recorded status."""
+    """Run the pipeline for one queued job. Returns the recorded status.
+
+    ``unattended`` skips the interactive review pause: the outcome is recorded
+    and the caller moves to the next job, so a batch never blocks on input.
+    The submit gate is unchanged — only the allowlist + fully-resolved check
+    can submit.
+    """
     now = lambda: datetime.now(UTC).isoformat()  # noqa: E731
     def mark_manual(note: str) -> str:
         if not dry_run:  # dry-run must not mutate application state
@@ -218,16 +225,26 @@ def process_one(
 
     # Review pause: the human inspects the headed browser and clicks Submit
     # themselves (SPEC §1 — the tool never submits outside the allowlist path).
-    answer = console.input(
-        "[bold]review the browser[/] — type [green]s[/] if you submitted, "
-        "[yellow]k[/] to skip, Enter to record as-is: "
-    ).strip().lower()
-    if answer == "s":
-        status = "submitted"
-    elif answer == "k":
-        status = "skipped"
-    else:
+    # Unattended batches record the outcome instead of waiting, so a form that
+    # needs a human lands on the dashboard and the run continues.
+    if unattended:
         status = "needs_input" if plan.unresolved else "filled"
+        if plan.unresolved:
+            console.print(
+                f"[yellow]needs you:[/] {len(plan.unresolved)} field(s) — "
+                "queued on the dashboard, moving on"
+            )
+    else:
+        answer = console.input(
+            "[bold]review the browser[/] — type [green]s[/] if you submitted, "
+            "[yellow]k[/] to skip, Enter to record as-is: "
+        ).strip().lower()
+        if answer == "s":
+            status = "submitted"
+        elif answer == "k":
+            status = "skipped"
+        else:
+            status = "needs_input" if plan.unresolved else "filled"
     db.record_application(
         conn, job_id=job.job_id, status=status, filled_at=now(),
         submitted_at=now() if status == "submitted" else None,
@@ -243,6 +260,7 @@ def run_queue(
     dry_run: bool = False,
     auto_submit: bool = False,
     max_per_run: int | None = None,
+    unattended: bool = False,
 ) -> None:
     """Process the queue in a headed persistent browser with jittered pacing."""
     conn = db.connect(settings.db_path)
@@ -253,6 +271,7 @@ def run_queue(
         conn.close()
         return
 
+    tally: dict[str, int] = {}
     with launch_context(settings.browser_data_dir, headed=True) as (_, page):
         for i, job in enumerate(jobs):
             console.print(
@@ -262,7 +281,7 @@ def run_queue(
             try:
                 status = process_one(
                     page, job, conn=conn, profile=profile, settings=settings,
-                    dry_run=dry_run, auto_submit=auto_submit,
+                    dry_run=dry_run, auto_submit=auto_submit, unattended=unattended,
                 )
             except Exception as e:  # noqa: BLE001 - one bad posting must not kill the run
                 db.record_application(conn, job_id=job.job_id, status="failed", notes=str(e))
@@ -270,8 +289,19 @@ def run_queue(
                 status = "failed"
             conn.commit()  # record_application runs outside db.transaction
             console.print(f"[dim]recorded:[/] {status}")
+            tally[status] = tally.get(status, 0) + 1
             if not dry_run and i < len(jobs) - 1:
                 delay = random.uniform(settings.rate_min_seconds, settings.rate_max_seconds)
                 console.print(f"[dim]rate limit — sleeping {delay:.0f}s[/]")
                 time.sleep(delay)
     conn.close()
+    if tally:
+        console.print(
+            "\n[bold]run summary:[/] "
+            + "  ".join(f"{k} {v}" for k, v in sorted(tally.items()))
+        )
+        if any(k in tally for k in ("needs_input", "manual", "failed")):
+            console.print(
+                "[dim]anything needing you is on the dashboard: "
+                "uv run autoapply dashboard[/]"
+            )

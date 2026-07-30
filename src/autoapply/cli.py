@@ -223,13 +223,20 @@ def run(
     dry_run: bool = typer.Option(False, "--dry-run", help="Plan field mappings; fill nothing."),
     auto_submit: bool = typer.Option(False, "--auto-submit", help="Allowlisted ATSs only."),
     max_per_run: int = typer.Option(15, "--max-per-run", help="Cap applications per run."),
+    unattended: bool = typer.Option(
+        False, "--unattended",
+        help="Never wait for input: skip anything needing a human, record it, keep going.",
+    ),
 ) -> None:
     """Process the queue: fill → review pause → submit (human clicks Submit)."""
     from autoapply.runner import run_queue
 
     settings = load_settings()
     settings.ensure_dirs()
-    run_queue(settings, dry_run=dry_run, auto_submit=auto_submit, max_per_run=max_per_run)
+    run_queue(
+        settings, dry_run=dry_run, auto_submit=auto_submit,
+        max_per_run=max_per_run, unattended=unattended,
+    )
 
 
 @app.command()
