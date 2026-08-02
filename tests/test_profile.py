@@ -18,7 +18,9 @@ def test_profile_yaml_loads():
     assert len(p.experience) == 4
     assert p.answers.work_authorization_us == "Yes"
     assert p.answers.require_sponsorship == "No"
-    assert p.answers.eeo.gender == "decline"
+    assert p.answers.eeo.gender == "Male"
+    assert p.answers.eeo.race == "Asian"
+    assert p.answers.eeo.orientation == "Heterosexual"
 
 
 def test_dates_are_strings():
