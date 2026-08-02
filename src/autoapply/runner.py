@@ -199,7 +199,14 @@ def process_one(
         print_plan(plan)
         return "queued"  # untouched
 
-    result = adapter.fill(page, plan)
+    # A stuck widget should cost seconds, not Playwright's 30s default: with a
+    # 100-job batch those timeouts dominate the run. Per-field isolation in the
+    # adapters turns the fast failure into a flag rather than a lost job.
+    page.set_default_timeout(8_000)
+    try:
+        result = adapter.fill(page, plan)
+    finally:
+        page.set_default_timeout(30_000)
     if result.status == "failed":
         db.record_application(
             conn, job_id=job.job_id, status="failed", notes=result.error or "fill failed"

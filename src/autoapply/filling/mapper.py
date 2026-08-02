@@ -51,6 +51,20 @@ class JobContext(Protocol):
     # ``final_url``/``url`` — one of these is used as the plan's job_url.
 
 
+#: Field keys/names that belong to bot-detection widgets, not the applicant.
+#: They are invisible, unfillable, and a CAPTCHA by definition needs a human —
+#: so they must never be routed to the LLM and reported as resolved.
+_BOT_INFRA = ("recaptcha", "captcha", "hcaptcha", "turnstile", "honeypot", "csrf")
+
+
+def is_bot_infra_field(f: FormField) -> bool:
+    """True for CAPTCHA/anti-bot plumbing that no answer can legitimately fill."""
+    blob = " ".join(
+        t for t in (f.key, f.name or "", f.label or "", f.attrs.get("id", "")) if t
+    ).lower()
+    return any(marker in blob for marker in _BOT_INFRA)
+
+
 def question_hash(question: str) -> str:
     """Stable hash of a free-text question, for the answer cache key."""
     return hashlib.sha256(question.strip().lower().encode()).hexdigest()[:16]
@@ -194,6 +208,10 @@ def _plan_field(
             return FieldPlan(f, value, "profile", 0.6, False, note=f"{key} (type-ahead)")
 
         return FieldPlan(f, value, "profile", 1.0, False, note=key)
+
+    # CAPTCHA plumbing: always a human, never an LLM answer.
+    if is_bot_infra_field(f):
+        return FieldPlan(f, None, "unmapped", 0.0, True, note="captcha — needs a human")
 
     # 4. Unmapped free-text -> LLM (if cached) else needs_input.
     if f.field_type in ("textarea", "text"):

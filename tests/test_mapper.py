@@ -154,3 +154,24 @@ def test_bare_name_fills_from_profile():
     fp = plan.fields[0]
     assert not fp.needs_input
     assert fp.value and " " in str(fp.value)  # "First Last"
+
+
+def test_captcha_fields_are_never_answered():
+    """CAPTCHA plumbing must flag for a human, never be filled or LLM-answered."""
+    from autoapply.filling.mapper import is_bot_infra_field
+
+    for key in ("g-recaptcha-response", "h-captcha-response", "cf-turnstile-response"):
+        assert is_bot_infra_field(
+            FormField(key=key, field_type="text", label="", selector=f"#{key}")
+        )
+    # A normal question is not infrastructure.
+    assert not is_bot_infra_field(
+        FormField(key="q1", field_type="textarea", label="Why us?", selector="#q1")
+    )
+
+    plan = _plan([
+        FormField(key="g-recaptcha-response", field_type="text", label="", selector="#g")
+    ])
+    fp = plan.fields[0]
+    assert fp.needs_input and fp.value is None
+    assert fp.source == "unmapped"  # never routed to the LLM
