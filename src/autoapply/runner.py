@@ -217,10 +217,14 @@ def process_one(
     finally:
         page.set_default_timeout(30_000)
     if result.status == "failed":
+        # A fill that blew up still produced a part-filled form worth finishing
+        # by hand, so it belongs in the manual queue rather than a dead 'failed'
+        # bucket the dashboard's Finish-manually card never surfaces.
         db.record_application(
-            conn, job_id=job.job_id, status="failed", notes=result.error or "fill failed"
+            conn, job_id=job.job_id, status="needs_input",
+            notes=json.dumps([f"fill error: {(result.error or 'unknown')[:80]}"]),
         )
-        return "failed"
+        return "needs_input"
 
     run_dir = settings.runs_dir / datetime.now(UTC).strftime("%Y%m%d")
     run_dir.mkdir(parents=True, exist_ok=True)
