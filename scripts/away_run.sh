@@ -39,7 +39,10 @@ mkdir -p "$REPO/runs"
   uv run autoapply sync || echo "  (sync failed — using existing listings)"
   uv run autoapply referrals || echo "  (referral sources unavailable)"
 
-  echo "[2/3] queueing up to $BATCH jobs (score >= $MIN_SCORE)"
+  echo "[2/3] queueing up to $BATCH NEW jobs (score >= $MIN_SCORE)"
+  # queue add is INSERT OR IGNORE on job_id, so anything already attempted
+  # (submitted, needs_input, manual, skipped) is never re-queued. Retrying a
+  # form that needs a human just burns the batch on jobs that cannot succeed.
   uv run autoapply queue add --top "$BATCH" --min-score "$MIN_SCORE"
 
   echo "[3/3] applying — unattended, submitting every complete form"
@@ -47,7 +50,7 @@ mkdir -p "$REPO/runs"
     --auto-submit --unattended --max-per-run "$BATCH"
 
   echo
-  echo "---- final status ----"
+  echo "---- submitted this run ----"
   uv run autoapply status
   echo "away run finished $(date '+%Y-%m-%d %H:%M:%S')"
 } 2>&1 | tee -a "$LOG"

@@ -223,6 +223,14 @@ def process_one(
         sub = adapter.submit(page, after)
         status = sub.status  # submitted | needs_input (bounced) | filled | failed
         proof = str(after) if after.exists() else str(shot)
+        if status == "submitted":
+            sent = conn.execute(
+                "SELECT COUNT(*) FROM applications WHERE status = 'submitted'"
+            ).fetchone()[0] + 1
+            console.print(
+                f"[bold green]✓ SUBMITTED[/] {job.company_name} — {job.title[:48]} "
+                f"[dim](#{sent} total)[/]"
+            )
         db.record_application(
             conn, job_id=job.job_id, status=status, filled_at=now(),
             submitted_at=now() if status == "submitted" else None,
