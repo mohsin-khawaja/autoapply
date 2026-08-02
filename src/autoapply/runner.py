@@ -302,6 +302,18 @@ def run_queue(
     tally: dict[str, int] = {}
     with launch_context(settings.browser_data_dir, headed=True) as (_, page):
         for i, job in enumerate(jobs):
+            # Re-read status: `autoapply skip` may have retired this job after
+            # the batch list was built, and an unattended run has no other way
+            # to hear about it.
+            current = conn.execute(
+                "SELECT status FROM applications WHERE job_id = ?", (job.job_id,)
+            ).fetchone()
+            if current is not None and current["status"] != "queued":
+                console.print(
+                    f"[dim]{i + 1}/{len(jobs)} {job.company_name} — skipped "
+                    f"({current['status']})[/]"
+                )
+                continue
             console.print(
                 f"\n[bold]{i + 1}/{len(jobs)}[/] {job.company_name} — {job.title} "
                 f"[dim]({job.ats or '?'})[/]"

@@ -272,3 +272,61 @@ def test_auto_submit_withheld_when_ats_not_allowlisted(
         dry_run=False, auto_submit=True, unattended=True,
     )
     assert status != "submitted"
+
+
+def _seeded_settings(tmp_path, feed_listings, extra=None):
+    """Real on-disk DB so the CLI can open/close its own connection."""
+    from autoapply.config import Settings
+
+    settings = Settings(home=tmp_path)
+    c = db.connect(settings.db_path)
+    _seed_jobs(c, feed_listings)
+    enqueue(c, ["aaaa1111", "bbbb2222"])
+    if extra:
+        extra(c)
+    c.commit()
+    c.close()
+    return settings
+
+
+def _statuses(settings):
+    c = db.connect(settings.db_path)
+    got = dict(c.execute("SELECT job_id, status FROM applications").fetchall())
+    c.close()
+    return got
+
+
+def test_skip_command_retires_matching_queued_apps(monkeypatch, tmp_path, feed_listings):
+    """`autoapply skip <pattern>` retires queued matches, leaves others alone."""
+    from typer.testing import CliRunner
+
+    from autoapply import cli
+
+    settings = _seeded_settings(tmp_path, feed_listings)
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+
+    res = CliRunner().invoke(cli.app, ["skip", "globex"])
+    assert res.exit_code == 0
+
+    got = _statuses(settings)
+    assert got["bbbb2222"] == "skipped"   # matched
+    assert got["aaaa1111"] == "queued"    # untouched
+
+    CliRunner().invoke(cli.app, ["skip", "globex", "--undo"])
+    assert _statuses(settings)["bbbb2222"] == "queued"
+
+
+def test_skip_never_touches_submitted(monkeypatch, tmp_path, feed_listings):
+    """A finished application must never be reopened by a skip."""
+    from typer.testing import CliRunner
+
+    from autoapply import cli
+
+    settings = _seeded_settings(
+        tmp_path, feed_listings,
+        extra=lambda c: db.record_application(c, job_id="bbbb2222", status="submitted"),
+    )
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+
+    CliRunner().invoke(cli.app, ["skip", "globex"])
+    assert _statuses(settings)["bbbb2222"] == "submitted"

@@ -260,6 +260,61 @@ def open(job_id: str = typer.Argument(..., help="Manual-tier job id (or prefix).
 
 
 @app.command()
+def skip(
+    pattern: str = typer.Argument(
+        ..., help="Company or title text to skip, e.g. 'palantir' or 'defense'."
+    ),
+    undo: bool = typer.Option(False, "--undo", help="Put skipped matches back in the queue."),
+) -> None:
+    """Skip queued applications matching PATTERN — takes effect on a live run.
+
+    Safe to use while a background batch is going: the runner re-checks each
+    job's status just before it starts, so a skip applies immediately without
+    restarting the run. Already-submitted applications are never touched.
+    """
+    settings = load_settings()
+    conn = db.connect(settings.db_path)
+    like = f"%{pattern.lower()}%"
+    if undo:
+        with db.transaction(conn):
+            cur = conn.execute(
+                """UPDATE applications SET status='queued', notes=NULL
+                   WHERE status='skipped' AND job_id IN (
+                     SELECT id FROM jobs
+                     WHERE lower(company_name) LIKE ? OR lower(title) LIKE ?)""",
+                (like, like),
+            )
+        console.print(f"[green]re-queued[/] {cur.rowcount} application(s) matching {pattern!r}")
+        conn.close()
+        raise typer.Exit()
+
+    rows = conn.execute(
+        """SELECT j.company_name, j.title FROM applications a JOIN jobs j ON j.id = a.job_id
+           WHERE a.status='queued' AND (lower(j.company_name) LIKE ? OR lower(j.title) LIKE ?)""",
+        (like, like),
+    ).fetchall()
+    if not rows:
+        console.print(f"[yellow]nothing queued matches[/] {pattern!r}")
+        conn.close()
+        raise typer.Exit(1)
+    with db.transaction(conn):
+        conn.execute(
+            """UPDATE applications SET status='skipped', notes='skipped by request'
+               WHERE status='queued' AND job_id IN (
+                 SELECT id FROM jobs
+                 WHERE lower(company_name) LIKE ? OR lower(title) LIKE ?)""",
+            (like, like),
+        )
+    conn.close()
+    console.print(f"[green]skipped[/] {len(rows)} application(s):")
+    for r in rows[:10]:
+        console.print(f"  [dim]{r['company_name']} — {r['title'][:50]}[/]")
+    if len(rows) > 10:
+        console.print(f"  [dim]… and {len(rows) - 10} more[/]")
+    console.print("[dim]a running batch picks this up on its next job[/]")
+
+
+@app.command()
 def status() -> None:
     """Show application tracking."""
     settings = load_settings()
