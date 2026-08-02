@@ -103,3 +103,30 @@ def test_freetext_without_cache_marks_llm():
     plan = _plan(fields)
     assert plan.fields[0].source == "llm"
     assert plan.fields[0].needs_input is True
+
+
+def test_bare_yes_matches_spelled_out_option():
+    """'Yes' must select 'Yes, I am legally authorized...' — fuzzy scores it 60."""
+    opts = [
+        "Yes, I am legally authorized to work in the United States for any employer",
+        "No, I require sponsorship to work in the United States",
+    ]
+    plan = _plan([
+        FormField(
+            key="auth", field_type="select",
+            label="Are you legally authorized to work in the United States?",
+            selector="#auth", options=opts,
+        )
+    ])
+    fp = plan.fields[0]
+    assert not fp.needs_input, "a mapped Yes/No answer must not block the application"
+    assert str(fp.value).startswith("Yes,")
+
+
+def test_yes_no_matching_never_picks_a_lookalike():
+    """'No' must not select 'Not applicable' or 'None'; non-yes/no values opt out."""
+    from autoapply.filling.mapper import _yes_no_option
+
+    assert _yes_no_option("No", ["Not applicable", "None of the above"]) is None
+    assert _yes_no_option("Yes", ["Yesterday"]) is None
+    assert _yes_no_option("B.S.", ["Yes", "No"]) is None

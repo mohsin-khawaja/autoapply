@@ -78,6 +78,27 @@ def resolve_profile_value(profile: Profile, dotted_key: str) -> str | None:
     return str(cur) if cur is not None else None
 
 
+def _yes_no_option(value: str, options: list[str]) -> str | None:
+    """Match a bare ``Yes``/``No`` answer to the option that begins with it.
+
+    ATS screeners spell the choice out ("Yes, I am legally authorized to work
+    in the United States for any employer") while profile.yaml stores the bare
+    word. Fuzzy ratio scores that pair around 60 — under any sane threshold —
+    so a correctly-mapped answer was being dropped to needs_input and blocking
+    the whole application. Matching on the leading token is exact, not fuzzy:
+    an option starting with "Yes," *is* the yes branch. Requires the first
+    token to equal yes/no, so "Not applicable" and "None" never match "No".
+    """
+    want = value.strip().lower()
+    if want not in ("yes", "no"):
+        return None
+    for opt in options:
+        head = opt.strip().lower().replace(",", " ").split()
+        if head and head[0].strip(".:;") == want:
+            return opt
+    return None
+
+
 def _fuzzy_option(value: str, options: list[str], threshold: int) -> tuple[str | None, float]:
     """Best option match for ``value`` via rapidfuzz. Returns (option, score 0..100)."""
     if not options:
@@ -154,6 +175,10 @@ def _plan_field(
                     option, score = _fuzzy_option(alias, f.options, threshold)
                     if option is not None:
                         break
+            if option is None:  # bare Yes/No vs a spelled-out option
+                option = _yes_no_option(value, f.options)
+                if option is not None:
+                    score = 100.0
             if option is None:
                 return FieldPlan(
                     f, None, "unmapped", score / 100.0, True,

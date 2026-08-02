@@ -59,8 +59,12 @@ SYNONYMS: dict[str, list[str]] = {
         "salary", "compensation expectation", "expected salary", "pay expectation",
     ],
     "answers.how_did_you_hear": ["how did you hear", "referral source", "how did you find"],
+    "answers.can_perform_essential_functions": [
+        "essential functions", "perform the essential",
+    ],
     "answers.previously_employed_here": [
         "previously employed", "former employee", "worked here before",
+        "currently an employee", "current employee", "employee of",
         "worked for", "worked at", "ever worked for", "ever worked at",
         "previously worked",
     ],

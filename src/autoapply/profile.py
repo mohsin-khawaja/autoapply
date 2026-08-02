@@ -142,6 +142,9 @@ class Answers(BaseModel):
     salary_expectation: str = ""
     how_did_you_hear: str = ""
     previously_employed_here: str = "No"
+    # Standard ADA screener ("can you perform the essential functions of this
+    # role, with or without reasonable accommodation?"). Yours to change.
+    can_perform_essential_functions: str = "Yes"
     criminal_record_disclosures: str = "decline_unless_required"
     security_clearance: str = "No"
     eeo: EEO = Field(default_factory=EEO)
