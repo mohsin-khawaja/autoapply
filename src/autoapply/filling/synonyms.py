@@ -16,7 +16,6 @@ import re
 
 # Ordered: more specific keys first so e.g. "linkedin" beats a generic "url".
 SYNONYMS: dict[str, list[str]] = {
-    "identity.full_name": ["full legal name", "full name", "legal name"],
     "identity.first_name": [
         "first name", "given name", "first_name", "given-name", "fname", "preferred name",
     ],
@@ -70,6 +69,7 @@ SYNONYMS: dict[str, list[str]] = {
     ],
     "answers.criminal_record_disclosures": ["criminal", "convicted", "felony"],
     "answers.security_clearance": ["security clearance", "clearance"],
+    "answers.citizenship_status": ["citizenship", "citizen status", "are you a citizen"],
     # EEO / voluntary self-id
     "answers.eeo.gender": ["gender"],
     "answers.eeo.race": [
@@ -96,6 +96,11 @@ SYNONYMS: dict[str, list[str]] = {
     "education.0.end_month": ["end date month"],
     "education.0.end_year": ["end date year", "graduation year"],
     "education.0.end": ["graduation date", "anticipated graduation"],
+    # Deliberately last. A field labelled only "Name" (common on Ashby) means
+    # the applicant's full name, but "name" as a substring appears in far more
+    # specific labels — so this entry runs only after every qualified variant
+    # above has had its chance ("First Name", "School Name", "Company Name").
+    "identity.full_name": ["full legal name", "full name", "legal name", "name"],
 }
 
 # HTML autocomplete tokens -> dotted key (strongest signal, checked first).

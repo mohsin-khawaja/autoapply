@@ -130,3 +130,27 @@ def test_yes_no_matching_never_picks_a_lookalike():
     assert _yes_no_option("No", ["Not applicable", "None of the above"]) is None
     assert _yes_no_option("Yes", ["Yesterday"]) is None
     assert _yes_no_option("B.S.", ["Yes", "No"]) is None
+
+
+def test_bare_name_label_maps_without_stealing_qualified_labels():
+    """A lone "Name" is the full name, but must not claim qualified variants."""
+    from autoapply.filling.synonyms import match_key
+
+    def k(label):
+        return match_key(label=label, name="", field_id="", aria="", autocomplete="")
+
+    assert k("Name") == "identity.full_name"
+    assert k("Full Legal Name") == "identity.full_name"
+    # Qualified labels keep their own mapping — the bare pattern runs last.
+    assert k("First Name") == "identity.first_name"
+    assert k("Last Name") == "identity.last_name"
+    assert k("School Name") == "education.0.school"
+    assert k("Name of University") == "education.0.school"
+
+
+def test_bare_name_fills_from_profile():
+    """The mapped full name resolves to a real value, not needs_input."""
+    plan = _plan([FormField(key="n", field_type="text", label="Name", selector="#n")])
+    fp = plan.fields[0]
+    assert not fp.needs_input
+    assert fp.value and " " in str(fp.value)  # "First Last"
