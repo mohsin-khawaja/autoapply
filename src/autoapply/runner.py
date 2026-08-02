@@ -57,7 +57,16 @@ def queued_jobs(conn: sqlite3.Connection, limit: int) -> list[QueuedJob]:
                   COALESCE(j.final_url, j.url) AS url, j.ats
            FROM applications a JOIN jobs j ON j.id = a.job_id
            WHERE a.status = 'queued'
-           ORDER BY j.score DESC, j.date_posted DESC LIMIT ?""",
+           -- Work the ATSs that can actually complete an application first.
+           -- A high-scoring 'generic' posting is usually a careers page with no
+           -- inline form, so scoring alone sends the batch to dead ends.
+           ORDER BY CASE j.ats
+                      WHEN 'greenhouse' THEN 0
+                      WHEN 'lever'      THEN 1
+                      WHEN 'ashby'      THEN 2
+                      ELSE 3
+                    END,
+                    j.score DESC, j.date_posted DESC LIMIT ?""",
         (limit,),
     ).fetchall()
     return [QueuedJob(r["job_id"], r["company_name"], r["title"], r["url"], r["ats"]) for r in rows]
