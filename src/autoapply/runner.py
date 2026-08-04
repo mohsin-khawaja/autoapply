@@ -282,6 +282,20 @@ def process_one(
     return status
 
 
+def _browser_is_dead(exc: BaseException) -> bool:
+    """True when Playwright reports the browser/context/page is gone.
+
+    Once that happens every remaining job fails instantly, so the batch must
+    relaunch rather than grind through the queue sleeping between corpses.
+    """
+    msg = str(exc)
+    return (
+        "browser has been closed" in msg
+        or "Target page, context or browser has been closed" in msg
+        or "Target closed" in msg
+    )
+
+
 def run_queue(
     settings: Settings,
     *,
@@ -300,40 +314,65 @@ def run_queue(
         return
 
     tally: dict[str, int] = {}
-    with launch_context(settings.browser_data_dir, headed=True) as (_, page):
-        for i, job in enumerate(jobs):
-            # Re-read status: `autoapply skip` may have retired this job after
-            # the batch list was built, and an unattended run has no other way
-            # to hear about it.
-            current = conn.execute(
-                "SELECT status FROM applications WHERE job_id = ?", (job.job_id,)
-            ).fetchone()
-            if current is not None and current["status"] != "queued":
+    pending = list(jobs)
+    restarts = 0
+    while pending:
+        crashed = False
+        with launch_context(settings.browser_data_dir, headed=True) as (_, page):
+            while pending:
+                job = pending[0]
+                done = len(jobs) - len(pending) + 1
+                # Re-read status: `autoapply skip` may have retired this job
+                # after the batch list was built, and an unattended run has no
+                # other way to hear about it.
+                current = conn.execute(
+                    "SELECT status FROM applications WHERE job_id = ?", (job.job_id,)
+                ).fetchone()
+                if current is not None and current["status"] != "queued":
+                    console.print(
+                        f"[dim]{done}/{len(jobs)} {job.company_name} — skipped "
+                        f"({current['status']})[/]"
+                    )
+                    pending.pop(0)
+                    continue
                 console.print(
-                    f"[dim]{i + 1}/{len(jobs)} {job.company_name} — skipped "
-                    f"({current['status']})[/]"
+                    f"\n[bold]{done}/{len(jobs)}[/] {job.company_name} — {job.title} "
+                    f"[dim]({job.ats or '?'})[/]"
                 )
-                continue
-            console.print(
-                f"\n[bold]{i + 1}/{len(jobs)}[/] {job.company_name} — {job.title} "
-                f"[dim]({job.ats or '?'})[/]"
-            )
-            try:
-                status = process_one(
-                    page, job, conn=conn, profile=profile, settings=settings,
-                    dry_run=dry_run, auto_submit=auto_submit, unattended=unattended,
-                )
-            except Exception as e:  # noqa: BLE001 - one bad posting must not kill the run
-                db.record_application(conn, job_id=job.job_id, status="failed", notes=str(e))
-                console.print(f"[red]failed:[/] {e}")
-                status = "failed"
-            conn.commit()  # record_application runs outside db.transaction
-            console.print(f"[dim]recorded:[/] {status}")
-            tally[status] = tally.get(status, 0) + 1
-            if not dry_run and i < len(jobs) - 1:
-                delay = random.uniform(settings.rate_min_seconds, settings.rate_max_seconds)
-                console.print(f"[dim]rate limit — sleeping {delay:.0f}s[/]")
-                time.sleep(delay)
+                try:
+                    status = process_one(
+                        page, job, conn=conn, profile=profile, settings=settings,
+                        dry_run=dry_run, auto_submit=auto_submit, unattended=unattended,
+                    )
+                except Exception as e:  # noqa: BLE001 - one bad posting must not kill the run
+                    if _browser_is_dead(e):
+                        # Leave this job queued and rebuild the browser around it.
+                        crashed = True
+                        break
+                    db.record_application(
+                        conn, job_id=job.job_id, status="failed", notes=str(e)
+                    )
+                    console.print(f"[red]failed:[/] {e}")
+                    status = "failed"
+                conn.commit()  # record_application runs outside db.transaction
+                console.print(f"[dim]recorded:[/] {status}")
+                tally[status] = tally.get(status, 0) + 1
+                pending.pop(0)
+                if not dry_run and pending:
+                    delay = random.uniform(settings.rate_min_seconds, settings.rate_max_seconds)
+                    console.print(f"[dim]rate limit — sleeping {delay:.0f}s[/]")
+                    time.sleep(delay)
+        if not crashed:
+            break
+        restarts += 1
+        if restarts > 5:
+            console.print("[red]browser keeps dying — stopping so the queue is preserved.[/]")
+            break
+        console.print(
+            f"[yellow]browser closed — relaunching "
+            f"(restart {restarts}, {len(pending)} job(s) left)[/]"
+        )
+        time.sleep(5)
     conn.close()
     if tally:
         console.print(

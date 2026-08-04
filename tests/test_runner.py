@@ -330,3 +330,17 @@ def test_skip_never_touches_submitted(monkeypatch, tmp_path, feed_listings):
 
     CliRunner().invoke(cli.app, ["skip", "globex"])
     assert _statuses(settings)["bbbb2222"] == "submitted"
+
+
+def test_browser_death_is_detected():
+    """A dead browser must be recognised so the batch relaunches, not grinds."""
+    from autoapply.runner import _browser_is_dead
+
+    assert _browser_is_dead(
+        Exception("Page.goto: Target page, context or browser has been closed")
+    )
+    assert _browser_is_dead(Exception("browser has been closed"))
+    # An ordinary per-job failure must NOT look like browser death, or one bad
+    # posting would trigger a pointless relaunch.
+    assert not _browser_is_dead(Exception("Page.fill: Timeout 8000ms exceeded"))
+    assert not _browser_is_dead(Exception("no form found"))
