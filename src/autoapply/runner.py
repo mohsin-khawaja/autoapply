@@ -158,6 +158,12 @@ def process_one(
             console.print(f"[yellow]would mark manual:[/] {note}")
         return "manual" if not dry_run else "queued"
 
+    # Portals that require an account before any form exists. The generic
+    # adapter would load the page, find nothing, and mark it manual anyway —
+    # so skip straight to manual and save the round trip.
+    if (job.ats or "") in _ACCOUNT_WALLED:
+        return mark_manual(f"{job.ats} needs an account — apply manually")
+
     adapter_cls = base.resolve_adapter(job.url)
     if adapter_cls is None:  # generic detects any http(s); None => unusable URL
         return mark_manual("no adapter")
@@ -282,6 +288,11 @@ def process_one(
     return status
 
 
+#: ATS families that gate the application behind a login, so there is nothing
+#: to fill on the public page.
+_ACCOUNT_WALLED = frozenset({"workday", "icims", "smartrecruiters", "rippling"})
+
+
 def _browser_is_dead(exc: BaseException) -> bool:
     """True when Playwright reports the browser/context/page is gone.
 
@@ -358,7 +369,10 @@ def run_queue(
                 console.print(f"[dim]recorded:[/] {status}")
                 tally[status] = tally.get(status, 0) + 1
                 pending.pop(0)
-                if not dry_run and pending:
+                # Pace only jobs where a form was actually touched. "manual"
+                # and "skipped" sent nothing, so the anti-blast delay would
+                # just burn hours on postings the tool cannot act on.
+                if not dry_run and pending and status not in ("manual", "skipped"):
                     delay = random.uniform(settings.rate_min_seconds, settings.rate_max_seconds)
                     console.print(f"[dim]rate limit — sleeping {delay:.0f}s[/]")
                     time.sleep(delay)

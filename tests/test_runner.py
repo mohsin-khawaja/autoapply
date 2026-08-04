@@ -344,3 +344,32 @@ def test_browser_death_is_detected():
     # posting would trigger a pointless relaunch.
     assert not _browser_is_dead(Exception("Page.fill: Timeout 8000ms exceeded"))
     assert not _browser_is_dead(Exception("no form found"))
+
+
+def test_account_walled_ats_skips_without_loading(monkeypatch, tmp_path, conn, feed_listings):
+    """Workday/iCIMS gate behind a login — mark manual without a page load."""
+    from autoapply import runner
+    from autoapply.config import Settings
+    from autoapply.profile import Profile
+
+    _seed_jobs(conn, feed_listings)
+    enqueue(conn, ["dddd4444"])  # the workday listing in the fixture feed
+    job = runner.queued_jobs(conn, 1)[0]
+    assert job.ats == "workday"
+
+    class _NoNav:
+        def goto(self, *a, **k):
+            raise AssertionError("must not load an account-walled portal")
+
+    profile = Profile.model_validate(
+        {"identity": {"first_name": "T", "last_name": "U", "email": "t@e.com", "phone": "5",
+                      "location": {"city": "SD", "state": "CA", "country": "United States"}}}
+    )
+    status = runner.process_one(
+        _NoNav(), job, conn=conn, profile=profile, settings=Settings(home=tmp_path),
+        dry_run=False, auto_submit=True, unattended=True,
+    )
+    assert status == "manual"
+    assert "account" in conn.execute(
+        "SELECT notes FROM applications WHERE job_id='dddd4444'"
+    ).fetchone()["notes"]
