@@ -355,7 +355,8 @@ def test_account_walled_ats_skips_without_loading(monkeypatch, tmp_path, conn, f
     _seed_jobs(conn, feed_listings)
     enqueue(conn, ["dddd4444"])  # the workday listing in the fixture feed
     job = runner.queued_jobs(conn, 1)[0]
-    assert job.ats == "workday"
+    # ats is NULL on this fixture row, so this also proves the URL fallback.
+    assert job.ats is None and "myworkdayjobs" in job.url
 
     class _NoNav:
         def goto(self, *a, **k):

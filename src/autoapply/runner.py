@@ -27,6 +27,7 @@ from autoapply.config import Settings
 from autoapply.filling import llm_answers, mapper
 from autoapply.ollama import OllamaClient
 from autoapply.profile import Profile, load_profile
+from autoapply.sources.simplify import classify_ats
 
 if TYPE_CHECKING:  # pragma: no cover
     from playwright.sync_api import Page
@@ -161,8 +162,9 @@ def process_one(
     # Portals that require an account before any form exists. The generic
     # adapter would load the page, find nothing, and mark it manual anyway —
     # so skip straight to manual and save the round trip.
-    if (job.ats or "") in _ACCOUNT_WALLED:
-        return mark_manual(f"{job.ats} needs an account — apply manually")
+    ats = job.ats or classify_ats(job.url).value  # ats can be NULL on older rows
+    if ats in _ACCOUNT_WALLED:
+        return mark_manual(f"{ats} needs an account — apply manually")
 
     adapter_cls = base.resolve_adapter(job.url)
     if adapter_cls is None:  # generic detects any http(s); None => unusable URL
