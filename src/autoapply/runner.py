@@ -177,6 +177,8 @@ def process_one(
     # adapter would load the page, find nothing, and mark it manual anyway —
     # so skip straight to manual and save the round trip.
     ats = job.ats or classify_ats(job.url).value  # ats can be NULL on older rows
+    if ats == "yc":
+        return mark_manual("YC — sign in at Work at a Startup and message the founder")
     if ats in _ACCOUNT_WALLED:
         return mark_manual(f"{ats} needs an account — apply manually")
 
@@ -311,7 +313,9 @@ def process_one(
 
 #: ATS families that gate the application behind a login, so there is nothing
 #: to fill on the public page.
-_ACCOUNT_WALLED = frozenset({"workday", "icims", "smartrecruiters", "rippling"})
+_ACCOUNT_WALLED = frozenset(
+    {"workday", "icims", "smartrecruiters", "rippling", "yc"}
+)
 
 
 class JobTimeout(Exception):

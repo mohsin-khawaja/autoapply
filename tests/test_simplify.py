@@ -34,9 +34,49 @@ def test_score_high_title_high_location(feed_listings):
 
 
 def test_score_medium_title_medium_location(feed_listings):
+    """"Software Engineer I" is entry level, so the new-grad boost applies."""
     swe = simplify.Listing.from_feed(feed_listings[1])  # SWE I, NYC
     score = simplify.heuristic_score(swe)
-    assert 40 <= score < 80, score
+    assert score >= 70, score
+
+
+def test_entry_level_outranks_an_equally_relevant_mid_level_title():
+    """The whole point: a new-grad req must beat a plain mid-level one."""
+
+    def listing(title: str) -> simplify.Listing:
+        return simplify.Listing(
+            id="x", company_name="Acme", title=title, url="https://x",
+            locations=["San Francisco, CA"], sponsorship="", category="eng",
+            active=True, is_visible=True, date_posted=None,
+        )
+
+    new_grad = simplify.heuristic_score(listing("Machine Learning Engineer, New Grad"))
+    mid = simplify.heuristic_score(listing("Machine Learning Engineer"))
+    assert new_grad > mid, (new_grad, mid)
+
+
+def test_score_excludes_out_of_reach_levels():
+    """Levels above new grad must be hard zeros, not merely downranked."""
+
+    def score(title: str) -> int:
+        return simplify.heuristic_score(
+            simplify.Listing(
+                id="x", company_name="Acme", title=title, url="https://x",
+                locations=["San Francisco, CA"], sponsorship="", category="eng",
+                active=True, is_visible=True, date_posted=None,
+            )
+        )
+
+    for title in (
+        "Sr. Software Engineer", "Staff ML Engineer", "Principal Engineer",
+        "Software Engineer III", "Software Engineer II", "Head of Engineering",
+        "Engineering Manager", "Software Architect", "Distinguished Engineer",
+        "ML Engineer (5+ years)", "Software Engineering Intern",
+    ):
+        assert score(title) == 0, title
+    # ...while genuine entry-level titles survive.
+    for title in ("Software Engineer I", "New Grad Software Engineer", "Junior ML Engineer"):
+        assert score(title) >= 70, title
 
 
 def test_score_excludes_senior(feed_listings):

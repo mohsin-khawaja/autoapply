@@ -407,3 +407,47 @@ def test_job_deadline_disabled_when_zero():
 
     with job_deadline(0):
         _time.sleep(0.4)
+
+
+def test_queue_add_top_skips_tracked_and_login_walled(monkeypatch, tmp_path, conn):
+    """--top N must yield N *new, fillable* jobs, not N wasted slots."""
+    from typer.testing import CliRunner
+
+    from autoapply import cli, db
+    from autoapply.config import Settings
+
+    now = datetime.now(UTC).isoformat()
+    # Highest scores are all either already attempted or login-walled; the only
+    # fresh fillable job scores lowest, so naive top-N ordering would miss it.
+    rows = [
+        ("done1", "greenhouse", 100), ("done2", "lever", 99),
+        ("walled1", "workday", 98), ("walled2", "yc", 97),
+        ("fresh1", "greenhouse", 80),
+    ]
+    for jid, ats, score in rows:
+        db.upsert_job(
+            conn, id=jid, company_name="C", title="Software Engineer I",
+            url=f"https://boards.greenhouse.io/{jid}", now_iso=now, ats=ats, score=score,
+        )
+    db.record_application(conn, job_id="done1", status="submitted")
+    db.record_application(conn, job_id="done2", status="manual")
+    conn.commit()
+
+    settings = Settings(home=tmp_path)
+    monkeypatch.setattr(settings.__class__, "db_path", property(lambda s: tmp_path / "x.db"))
+    monkeypatch.setattr(cli, "load_settings", lambda: settings)
+    class _KeepOpen:  # the CLI closes what it opens; the test still needs it
+        def __getattr__(self, name):
+            return getattr(conn, name)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(db, "connect", lambda _p: _KeepOpen())
+
+    CliRunner().invoke(cli.app, ["queue", "add", "--top", "3", "--min-score", "50"])
+    queued = {
+        r["job_id"]
+        for r in conn.execute("SELECT job_id FROM applications WHERE status='queued'")
+    }
+    assert queued == {"fresh1"}, queued

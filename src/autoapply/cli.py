@@ -98,6 +98,28 @@ def sync(
 
 
 @app.command()
+def yc() -> None:
+    """Pull new-grad-eligible YC startup roles into the job table.
+
+    Filters on the board's own ``minExperience`` field, so only postings that
+    say new grads are welcome are kept. YC applications go through a Work at a
+    Startup login and are a message to the founder, so these land in the manual
+    tier for you to send — the runner never auto-applies to them.
+    """
+    from autoapply.sources import ycombinator
+
+    settings = load_settings()
+    settings.ensure_dirs()
+    with console.status("fetching YC jobs…"):
+        result = ycombinator.sync(settings)
+    console.print(
+        f"[green]YC synced[/] {result.fetched} postings — "
+        f"new-grad eligible {result.new_grad}, new {result.new}"
+    )
+    console.print("[dim]YC roles need a Work at a Startup login — see the manual tier.[/]")
+
+
+@app.command()
 def referrals(
     min_score: int = typer.Option(1, "--min-score", help="Skip postings below this fit."),
 ) -> None:
@@ -151,14 +173,34 @@ def queue_add(
     job_id: str = typer.Argument(None, help="Job id (or unique prefix) to enqueue."),
     top: int = typer.Option(None, "--top", help="Enqueue the top-N by score."),
     min_score: int = typer.Option(70, "--min-score", help="Score floor for --top."),
+    fillable_only: bool = typer.Option(
+        True,
+        "--fillable-only/--all-ats",
+        help="Skip login-walled ATSs (Workday/iCIMS/YC) that an away run cannot complete.",
+    ),
 ) -> None:
     """Enqueue a job by id, or the top-N scored jobs."""
-    from autoapply.runner import enqueue
+    from autoapply.runner import _ACCOUNT_WALLED, enqueue
 
     settings = load_settings()
     conn = db.connect(settings.db_path)
     if top is not None:
-        ids = [j.id for j in db.list_jobs(conn, min_score=min_score, limit=top)]
+        # Over-fetch, then drop the login-walled rows so --top N really yields
+        # N postings the runner can fill rather than N rows it will mark manual.
+        pool = db.list_jobs(conn, min_score=min_score, limit=top * 20 if fillable_only else top)
+        # Drop anything already attempted, otherwise those rows eat the N slots
+        # and are only discarded later by the INSERT OR IGNORE — "--top 40"
+        # would report 40 tracked and queue nothing.
+        tracked = {r["job_id"] for r in conn.execute("SELECT job_id FROM applications")}
+        pool = [j for j in pool if j.id not in tracked]
+        if fillable_only:
+            pool = [j for j in pool if (j.ats or "") not in _ACCOUNT_WALLED]
+            # Spend the N slots on ATSs that can actually be completed. A
+            # 'generic' posting is usually a careers page with no inline form,
+            # so a high score there still ends the run in a dead end.
+            rank = {"greenhouse": 0, "lever": 1, "ashby": 2}
+            pool.sort(key=lambda j: (rank.get(j.ats or "", 3), -j.score))
+        ids = [j.id for j in pool[:top]]
     elif job_id:
         rows = conn.execute(
             "SELECT id FROM jobs WHERE id LIKE ?", (job_id + "%",)
