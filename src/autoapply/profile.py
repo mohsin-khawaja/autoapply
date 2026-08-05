@@ -123,6 +123,7 @@ class EEO(BaseModel):
     model_config = ConfigDict(extra="forbid")
     gender: str = "decline"
     race: str = "decline"
+    hispanic_latino: str = "decline"  # separate US EEO question from race
     veteran: str = "I am not a protected veteran"
     disability: str = "I do not want to answer"
     orientation: str = "decline"

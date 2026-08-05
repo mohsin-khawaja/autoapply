@@ -73,10 +73,14 @@ SYNONYMS: dict[str, list[str]] = {
     "answers.citizenship_status": ["citizenship", "citizen status", "are you a citizen"],
     # EEO / voluntary self-id
     "answers.eeo.gender": ["gender"],
-    "answers.eeo.race": [
-        "race", "ethnicity", "hispanic or latino", "hispanic/latino", "hispanic",
-        "racial", "ethnic background",
+    # Hispanic/Latino is a SEPARATE US EEO question from race — matched before
+    # race so "Are you Hispanic or Latino?" resolves to its own Yes/No answer
+    # instead of the race value ("Asian").
+    "answers.eeo.hispanic_latino": [
+        "hispanic or latino", "hispanic/latino", "hispanic", "latino", "latinx",
+        "hispanic or latinx",
     ],
+    "answers.eeo.race": ["race", "ethnicity", "racial", "ethnic background"],
     "answers.eeo.orientation": ["sexual orientation"],
     "answers.eeo.transgender": ["transgender"],
     "answers.eeo.veteran": ["veteran", "protected veteran"],
