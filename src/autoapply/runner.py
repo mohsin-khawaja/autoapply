@@ -93,18 +93,29 @@ def _fill_llm_answers(
     job: QueuedJob,
     client: OllamaClient,
 ) -> None:
-    """Resolve ``source=="llm"`` free-text fields via the answer cache / Ollama.
+    """Resolve ``source=="llm"`` fields via the answer cache / Ollama.
 
-    Best-effort: if Ollama is down the field simply stays needs_input.
+    Two shapes: a constrained field (has options) asks the model to pick the
+    best visible option; a free-text field asks it to write an answer. Both are
+    best-effort — if Ollama is down, or the model returns no valid option, the
+    field simply stays needs_input rather than being filled with a guess.
     """
     for fp in plan.fields:
         if fp.source != "llm" or fp.value is not None:
             continue
         question = fp.field.label or fp.field.key
         try:
-            answer = llm_answers.get_or_generate(
-                conn, question, job.company_name, profile=profile, job=job, client=client
-            )
+            if fp.field.options:  # constrained: pick one of the visible options
+                answer = llm_answers.choose_option(
+                    question, fp.field.options, profile, job, client
+                )
+                if answer is None:  # model declined / no valid match — leave flagged
+                    fp.note = "llm could not pick a safe option — needs you"
+                    continue
+            else:  # free-text: generate and cache
+                answer = llm_answers.get_or_generate(
+                    conn, question, job.company_name, profile=profile, job=job, client=client
+                )
         except Exception as e:  # noqa: BLE001 - degrade to manual, never abort the run
             fp.note = f"llm unavailable: {e}"
             continue
@@ -112,7 +123,7 @@ def _fill_llm_answers(
         fp.source = "answer_cache"
         fp.needs_input = False
         fp.confidence = 1.0
-        fp.note = "generated answer (review before submit)"
+        fp.note = "llm estimated (review before submit)"
 
 
 def print_plan(plan: base.FillPlan) -> None:

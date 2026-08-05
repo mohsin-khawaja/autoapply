@@ -175,3 +175,26 @@ def test_captcha_fields_are_never_answered():
     fp = plan.fields[0]
     assert fp.needs_input and fp.value is None
     assert fp.source == "unmapped"  # never routed to the LLM
+
+
+def test_gpa_and_test_scores_are_never_estimated():
+    """Verifiable credentials not in the profile must stay needs_input, not LLM."""
+    from autoapply.filling.mapper import is_unfabricable_fact
+
+    for label in ("GPA (Undergraduate)", "SAT Score", "ACT Score", "GRE Score"):
+        f = FormField(key="k", field_type="text", label=label, selector="#k")
+        assert is_unfabricable_fact(f), f"{label} must be guarded"
+        plan = _plan([f])
+        assert plan.fields[0].needs_input
+        assert plan.fields[0].source == "unmapped"  # never routed to the LLM
+
+
+def test_unmapped_freetext_and_choices_route_to_llm():
+    """A free-text question and an unmapped dropdown both defer to the LLM."""
+    text = FormField(key="q", field_type="textarea", label="Why do you want this?", selector="#q")
+    choice = FormField(
+        key="c", field_type="select", label="Preferred team?", selector="#c",
+        options=["Platform", "Product", "Infra"],
+    )
+    plan = _plan([text, choice])
+    assert all(fp.source == "llm" for fp in plan.fields)

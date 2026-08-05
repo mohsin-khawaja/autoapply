@@ -46,6 +46,25 @@ class JobContext(Protocol):
     title: str
 
 
+_OPTION_SYSTEM_PROMPT = (
+    "You pick the single best answer to a multiple-choice job application "
+    "question on behalf of the candidate described below.\n"
+    "Rules — follow every one strictly:\n"
+    "- Choose exactly ONE option from the numbered list. Reply with only that "
+    "option's exact text, copied verbatim. No number, no punctuation, no "
+    "explanation.\n"
+    "- Base the choice on the CANDIDATE PROFILE. For a question the profile "
+    "answers directly (work authorization, sponsorship, relocation, employment "
+    "history), pick the option that matches the profile.\n"
+    "- For a reasonable-judgment question the profile does not settle, pick the "
+    "option a typical applicant in the candidate's position would choose — "
+    "prefer the neutral, non-disqualifying, honest option.\n"
+    "- Never pick an option that asserts a specific credential the profile does "
+    "not support (a GPA, a test score, a clearance, a degree not held). If every "
+    "option would require inventing such a fact, reply with exactly: UNKNOWN"
+)
+
+
 def profile_facts(profile: Profile) -> str:
     """Render the profile as a compact plain-text fact sheet for the prompt."""
     ident = profile.identity
@@ -97,6 +116,51 @@ def generate_answer(
     """Generate a grounded first-person answer via the local Ollama model."""
     text = client.chat(build_messages(question, profile, job), temperature=temperature)
     return text.strip()
+
+
+def choose_option(
+    question: str,
+    options: list[str],
+    profile: Profile,
+    job: JobContext,
+    client: OllamaClient,
+    *,
+    temperature: float = 0.0,
+) -> str | None:
+    """Pick the best option for a constrained question, or None if genuinely unknown.
+
+    Returns an option string only when the model's reply matches one of
+    ``options`` (case-insensitive, whitespace-normalized). A reply of UNKNOWN,
+    or anything that does not match an option, returns None so the field stays
+    needs_input rather than being filled with an invented answer.
+    """
+    if not options:
+        return None
+    numbered = "\n".join(f"{i + 1}. {o}" for i, o in enumerate(options))
+    user = (
+        f"CANDIDATE PROFILE:\n{profile_facts(profile)}\n\n"
+        f"JOB: {job.title} at {job.company_name}\n\n"
+        f"QUESTION:\n{question}\n\nOPTIONS:\n{numbered}\n\n"
+        "Reply with the exact text of the single best option."
+    )
+    reply = client.chat(
+        [
+            {"role": "system", "content": _OPTION_SYSTEM_PROMPT},
+            {"role": "user", "content": user},
+        ],
+        temperature=temperature,
+    ).strip()
+    if not reply or reply.upper() == "UNKNOWN":
+        return None
+    norm = " ".join(reply.lower().split())
+    for opt in options:
+        if " ".join(opt.lower().split()) == norm:
+            return opt
+    # Model sometimes returns "2" or "2. Yes" — recover a leading index.
+    head = reply.split(".")[0].split(")")[0].strip()
+    if head.isdigit() and 1 <= int(head) <= len(options):
+        return options[int(head) - 1]
+    return None
 
 
 def get_or_generate(

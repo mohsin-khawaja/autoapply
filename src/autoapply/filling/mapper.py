@@ -124,6 +124,21 @@ def _fuzzy_option(value: str, options: list[str], threshold: int) -> tuple[str |
     return (option if score >= threshold else None), float(score)
 
 
+#: Verifiable credentials the LLM must never invent — a made-up value here is a
+#: factual misrepresentation on a real application. These stay needs_input until
+#: the user supplies the real value in profile.yaml.
+_UNFABRICABLE = (
+    "gpa", "grade point", "sat score", "act score", "gre score", "gmat",
+    "lsat", "test score", "class rank", "security clearance level",
+)
+
+
+def is_unfabricable_fact(f: FormField) -> bool:
+    """True for fields asking a specific credential no answer can be estimated."""
+    blob = " ".join(t for t in (f.label or "", f.name or "", f.key) if t).lower()
+    return any(marker in blob for marker in _UNFABRICABLE)
+
+
 def build_plan(
     fields: list[FormField],
     profile: Profile,
@@ -194,6 +209,13 @@ def _plan_field(
                 if option is not None:
                     score = 100.0
             if option is None:
+                # Profile has a value but no option matched — let the LLM pick
+                # from the visible options (unless it's a hard credential).
+                if not is_unfabricable_fact(f):
+                    return FieldPlan(
+                        f, None, "llm", 0.0, True,
+                        note=f"{key}={value!r}: llm to choose option",
+                    )
                 return FieldPlan(
                     f, None, "unmapped", score / 100.0, True,
                     note=f"{key}={value!r} no option >= {threshold} (best {score:.0f})",
@@ -213,16 +235,25 @@ def _plan_field(
     if is_bot_infra_field(f):
         return FieldPlan(f, None, "unmapped", 0.0, True, note="captcha — needs a human")
 
-    # 4. Unmapped free-text -> LLM (if cached) else needs_input.
+    # A specific verifiable credential (GPA, test score, clearance) that isn't in
+    # the profile — never estimate it; a wrong number is a lie on the application.
+    if is_unfabricable_fact(f):
+        return FieldPlan(f, None, "unmapped", 0.0, True, note="credential not in profile")
+
+    # 4. Free-text with no profile mapping -> LLM. Cached answer wins; otherwise
+    #    the runner generates one. Both single-line and paragraph fields qualify,
+    #    so best-effort estimated answers complete the form rather than blocking it.
     if f.field_type in ("textarea", "text"):
         qh = question_hash(f.label or f.key)
         cached = answers.get(qh, job.company_name)
         if cached:
             return FieldPlan(f, cached, "answer_cache", 1.0, False, note="cached answer")
-        return FieldPlan(
-            f, None, "llm" if f.field_type == "textarea" else "unmapped",
-            0.0, True, note="free-text: needs generated/manual answer",
-        )
+        return FieldPlan(f, None, "llm", 0.0, True, note="free-text: llm to answer")
 
-    # 5. Everything else (unknown/date/checkbox with no mapping) -> manual.
+    # 5. Unmapped constrained field (no profile key matched) -> LLM picks the
+    #    best option from what's visible, grounded in the profile.
+    if f.field_type in ("select", "radio", "combobox", "multiselect") and f.options:
+        return FieldPlan(f, None, "llm", 0.0, True, note="unmapped choice: llm to pick")
+
+    # 6. Everything else (unknown/date/checkbox with no mapping) -> manual.
     return FieldPlan(f, None, "unmapped", 0.0, True, note="no deterministic mapping")
