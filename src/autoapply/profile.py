@@ -28,6 +28,7 @@ class Links(BaseModel):
     linkedin: str = ""
     website: str = ""
     github: str = ""
+    twitter: str = ""  # X / Twitter profile URL
 
 
 class Identity(BaseModel):

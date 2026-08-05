@@ -34,6 +34,7 @@ def test_resolve_dotted_keys():
     assert resolve_profile_value(p, "identity.first_name") == "Mohsin"
     assert resolve_profile_value(p, "answers.require_sponsorship") == "No"
     assert resolve_profile_value(p, "education.0.school").startswith("University of California")
+    assert resolve_profile_value(p, "identity.links.github").startswith("https://github.com/")
+    assert resolve_profile_value(p, "identity.links.twitter").startswith("https://x.com/")
     # empty optional -> None (never fabricate)
-    assert resolve_profile_value(p, "identity.links.github") is None
     assert resolve_profile_value(p, "education.0.gpa") is None

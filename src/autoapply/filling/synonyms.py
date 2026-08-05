@@ -26,6 +26,7 @@ SYNONYMS: dict[str, list[str]] = {
     "identity.phone": ["phone", "mobile", "telephone", "phone number", "tel"],
     "identity.links.linkedin": ["linkedin"],
     "identity.links.github": ["github"],
+    "identity.links.twitter": ["twitter", "x profile", "x handle", "x (twitter)", "x/twitter"],
     "identity.links.website": ["website", "portfolio", "personal site", "personal website"],
     "identity.location.city": [
         "city", "current city", "where are you currently located", "where are you located",
@@ -155,13 +156,16 @@ VALUE_ALIASES: dict[str, tuple[str, ...]] = {
     "m.a.": ("Master of Arts", "Master's Degree", "Masters"),
     "phd": ("Doctor of Philosophy", "Doctorate", "PhD"),
     "ph.d.": ("Doctor of Philosophy", "Doctorate", "PhD"),
-    # Discipline taxonomies rarely list this exact major; "Other" is the
-    # truthful pick when the real one is absent (tried last).
+    # Discipline dropdowns rarely list this exact major. Try the real name, then
+    # Computer Science (the applicant's CS minor and the closest listed field),
+    # then Other. All three are honest — a CS minor plus an ML/neural-computation
+    # concentration — never a fabricated degree.
     "cognitive science: machine learning & neural computation": (
         "Cognitive Science",
+        "Computer Science",
         "Other",
     ),
-    "cognitive science": ("Cognitive Science", "Other"),
+    "cognitive science": ("Cognitive Science", "Computer Science", "Other"),
     # "How did you hear" lists rarely include a company-website entry verbatim.
     "company website": ("Company website", "Company Website", "Careers page", "Other"),
     # Self-ID "decline" phrasings differ per form; all mean the same choice.

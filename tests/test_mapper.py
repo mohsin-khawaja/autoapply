@@ -56,7 +56,8 @@ def test_file_input_gets_resume():
 
 
 def test_missing_profile_value_flags_needs_input():
-    fields = [FormField(key="g", field_type="text", label="GitHub URL", selector="#g")]
+    # GPA maps to education.0.gpa, which is empty in profile.yaml -> needs_input.
+    fields = [FormField(key="g", field_type="text", label="GPA", selector="#g")]
     plan = _plan(fields)
     assert plan.fields[0].needs_input is True
     assert plan.fields[0].source == "unmapped"
