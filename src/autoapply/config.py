@@ -43,6 +43,11 @@ class Settings:
     rate_max_seconds: float = 90.0
     max_per_run: int = 15
 
+    # Hard wall-clock cap per application. Past this, the job is abandoned (cached
+    # to the dashboard as needs_input) and the run moves on — throughput over a
+    # single slow form. 0 disables the cap.
+    per_job_seconds: float = 120.0
+
     # Auto-submit is OFF by default; only ATSs in this set may be auto-submitted.
     auto_submit_allowlist: set[ATSKind] = field(default_factory=set)
 

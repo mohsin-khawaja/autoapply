@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import json
 import random
+import signal
 import sqlite3
+import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -214,7 +217,12 @@ def process_one(
         fuzzy_threshold=settings.fuzzy_threshold,
     )
 
-    client = OllamaClient(host=settings.ollama_host, model=settings.ollama_model)
+    # Keep any single generation well inside the per-job cap — a 7B model on a
+    # long essay prompt can otherwise spend the whole budget on one field.
+    llm_timeout = max(20.0, settings.per_job_seconds / 3) if settings.per_job_seconds else 120.0
+    client = OllamaClient(
+        host=settings.ollama_host, model=settings.ollama_model, timeout=llm_timeout
+    )
     # Run on whatever model this machine actually has pulled, so answer
     # generation works offline without matching config exactly.
     resolved = client.resolve_model(fallback=settings.ollama_fallback_model)
@@ -306,6 +314,36 @@ def process_one(
 _ACCOUNT_WALLED = frozenset({"workday", "icims", "smartrecruiters", "rippling"})
 
 
+class JobTimeout(Exception):
+    """A single application exceeded ``settings.per_job_seconds``."""
+
+
+@contextmanager
+def job_deadline(seconds: float):
+    """Raise :class:`JobTimeout` in the main thread after ``seconds``.
+
+    Playwright's sync API blocks on a socket, so SIGALRM is what actually
+    interrupts a hung widget — a thread-based timer could only watch. Disabled
+    when ``seconds`` <= 0 or when off the main thread (tests, workers), where
+    signal handlers cannot be installed.
+    """
+    usable = seconds > 0 and threading.current_thread() is threading.main_thread()
+    if not usable:
+        yield
+        return
+
+    def _fire(signum, frame):  # noqa: ANN001, ARG001
+        raise JobTimeout(f"exceeded {seconds:.0f}s cap")
+
+    prev = signal.signal(signal.SIGALRM, _fire)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, prev)
+
+
 def _browser_is_dead(exc: BaseException) -> bool:
     """True when Playwright reports the browser/context/page is gone.
 
@@ -318,6 +356,19 @@ def _browser_is_dead(exc: BaseException) -> bool:
         or "Target page, context or browser has been closed" in msg
         or "Target closed" in msg
     )
+
+
+def _recover_page(page: Page) -> bool:
+    """Return the page to a clean state after a timeout. False => relaunch needed.
+
+    An interrupted Playwright call can leave the page mid-navigation, so prove
+    it still responds by parking it on a blank page before the next job.
+    """
+    try:
+        page.goto("about:blank", wait_until="domcontentloaded", timeout=10_000)
+    except Exception:  # noqa: BLE001 - unresponsive page; caller relaunches the browser
+        return False
+    return True
 
 
 def run_queue(
@@ -364,10 +415,26 @@ def run_queue(
                     f"[dim]({job.ats or '?'})[/]"
                 )
                 try:
-                    status = process_one(
-                        page, job, conn=conn, profile=profile, settings=settings,
-                        dry_run=dry_run, auto_submit=auto_submit, unattended=unattended,
+                    with job_deadline(settings.per_job_seconds):
+                        status = process_one(
+                            page, job, conn=conn, profile=profile, settings=settings,
+                            dry_run=dry_run, auto_submit=auto_submit, unattended=unattended,
+                        )
+                except JobTimeout as e:
+                    # Distribution beats perfection: cache the half-worked form to
+                    # the dashboard and move on. Nothing was submitted — the gate
+                    # never ran — so it is safe to finish this one by hand later.
+                    db.record_application(
+                        conn, job_id=job.job_id, status="needs_input", notes=f"timed out: {e}"
                     )
+                    console.print(f"[yellow]timed out after {settings.per_job_seconds:.0f}s[/]")
+                    status = "needs_input"
+                    if not _recover_page(page):
+                        crashed = True
+                        pending.pop(0)  # already recorded; don't retry it after relaunch
+                        conn.commit()
+                        tally[status] = tally.get(status, 0) + 1
+                        break
                 except Exception as e:  # noqa: BLE001 - one bad posting must not kill the run
                     if _browser_is_dead(e):
                         # Leave this job queued and rebuild the browser around it.

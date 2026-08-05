@@ -374,3 +374,36 @@ def test_account_walled_ats_skips_without_loading(monkeypatch, tmp_path, conn, f
     assert "account" in conn.execute(
         "SELECT notes FROM applications WHERE job_id='dddd4444'"
     ).fetchone()["notes"]
+
+
+def test_job_deadline_interrupts_a_hung_job():
+    """The cap must fire on blocking work, not merely between operations."""
+    import time as _time
+
+    from autoapply.runner import JobTimeout, job_deadline
+
+    started = _time.monotonic()
+    with pytest.raises(JobTimeout):
+        with job_deadline(0.3):
+            _time.sleep(30)  # stands in for a wedged Playwright call
+    assert _time.monotonic() - started < 5, "deadline did not interrupt the blocking call"
+
+
+def test_job_deadline_is_disarmed_after_use():
+    """A completed job must not leave a timer armed for the next one."""
+    import time as _time
+
+    from autoapply.runner import job_deadline
+
+    with job_deadline(0.3):
+        pass
+    _time.sleep(0.5)  # the old timer would fire here if it were still armed
+
+
+def test_job_deadline_disabled_when_zero():
+    import time as _time
+
+    from autoapply.runner import job_deadline
+
+    with job_deadline(0):
+        _time.sleep(0.4)
