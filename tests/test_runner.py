@@ -451,3 +451,13 @@ def test_queue_add_top_skips_tracked_and_login_walled(monkeypatch, tmp_path, con
         for r in conn.execute("SELECT job_id FROM applications WHERE status='queued'")
     }
     assert queued == {"fresh1"}, queued
+
+
+def test_max_per_run_zero_applies_to_nothing(tmp_path, conn, feed_listings):
+    """An explicit 0 must not fall back to the default batch size."""
+    from autoapply import runner
+
+    _seed_jobs(conn, feed_listings)
+    enqueue(conn, [r["id"] for r in conn.execute("SELECT id FROM jobs")])
+    conn.commit()
+    assert runner.queued_jobs(conn, 0) == []

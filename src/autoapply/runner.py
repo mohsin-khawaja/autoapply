@@ -386,7 +386,10 @@ def run_queue(
     """Process the queue in a headed persistent browser with jittered pacing."""
     conn = db.connect(settings.db_path)
     profile = load_profile(settings.profile_path)
-    jobs = queued_jobs(conn, max_per_run or settings.max_per_run)
+    # `or` would treat an explicit 0 as "unset" and fall back to 15 — a request
+    # to apply to nothing must apply to nothing.
+    limit = settings.max_per_run if max_per_run is None else max_per_run
+    jobs = queued_jobs(conn, limit)
     if not jobs:
         console.print("[yellow]queue empty[/] — `autoapply queue add --top 10` first.")
         conn.close()

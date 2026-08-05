@@ -32,6 +32,8 @@ SYNONYMS: dict[str, list[str]] = {
         "city", "current city", "where are you currently located", "where are you located",
         "current location", "location (city)", "your location", "where are you based",
     ],
+    # "state" is also a verb. "Please state your desired salary" must not map to
+    # the home state, so the verb usages are excluded before the noun matches.
     "identity.location.state": ["state", "province", "region"],
     # Screener answers (see profile.answers.*)
     # work-authorization is matched BEFORE location.country so a phrase like
@@ -138,9 +140,15 @@ def match_key(*, label: str, name: str, field_id: str, aria: str, autocomplete: 
     if not haystack:
         return None
     for key, patterns in SYNONYMS.items():
+        if key == "identity.location.state" and _VERB_STATE.search(haystack):
+            continue  # "please state ..." is an instruction, not a location field
         if any(_matches(p, haystack) for p in patterns):
             return key
     return None
+
+
+#: "state" used as a verb ("please state the GPA", "state your salary").
+_VERB_STATE = re.compile(r"\b(?:please\s+)?state\s+(?:the|your|you|a|an)\b")
 
 
 def _matches(pattern: str, haystack: str) -> bool:

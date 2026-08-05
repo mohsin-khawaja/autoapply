@@ -199,3 +199,37 @@ def test_unmapped_freetext_and_choices_route_to_llm():
     )
     plan = _plan([text, choice])
     assert all(fp.source == "llm" for fp in plan.fields)
+
+
+def test_gpa_question_never_borrows_the_home_state():
+    """"Please state the GPA" must not fill "CA" from identity.location.state.
+
+    Seen live: the field scored profile/100%, counted as resolved, and would
+    have passed the submit gate with a wrong answer on a real application.
+    """
+    f = FormField(
+        key="g", field_type="textarea",
+        label=(
+            "What was your cumulative GPA upon graduation? "
+            "Please state the GPA and degree obtained."
+        ),
+        selector="#g",
+    )
+    plan = _plan([f])
+    fp = plan.fields[0]
+    assert fp.needs_input, "an unanswerable credential must block, not guess"
+    assert fp.value is None
+    assert fp.source == "unmapped"
+
+
+def test_state_as_a_verb_does_not_map_to_location():
+    from autoapply.filling.synonyms import match_key
+
+    def k(label):
+        return match_key(label=label, name="", field_id="", aria="", autocomplete="")
+
+    assert k("Please state your desired salary") != "identity.location.state"
+    assert k("State the reason for leaving") != "identity.location.state"
+    # ...while a real location field still maps.
+    assert k("State") == "identity.location.state"
+    assert k("State / Province") == "identity.location.state"

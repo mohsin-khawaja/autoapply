@@ -183,6 +183,14 @@ def _plan_field(
             return FieldPlan(f, resume_path, "file", 1.0, False, note="resume upload")
         return FieldPlan(f, None, "unmapped", 0.0, True, note="no resume configured")
 
+    # 0. Verifiable credentials are checked BEFORE any mapping. Otherwise a
+    # label like "Please state the GPA and degree obtained" matches the bare
+    # "state" synonym and fills the applicant's home state ("CA") into a GPA
+    # box — a wrong answer on a live application, scored profile/100%, which
+    # would then pass the submit gate as fully resolved.
+    if is_unfabricable_fact(f):
+        return FieldPlan(f, None, "unmapped", 0.0, True, note="verifiable credential — needs you")
+
     # 1. Deterministic profile mapping.
     key = synonyms.match_key(
         label=f.label,
