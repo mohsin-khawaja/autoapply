@@ -48,6 +48,25 @@ class Settings:
     # single slow form. 0 disables the cap.
     per_job_seconds: float = 120.0
 
+    # ---- discovery (runs unattended on a schedule; see scripts/discover.sh) ----
+    #: Skip a scheduled run when the last success is newer than this. Guards the
+    #: 6-hourly timer against double-syncing on reboot/wake catch-up.
+    discovery_min_interval_hours: float = 5.0
+    #: No successful discovery in this long => the watchdog alerts. Sized well
+    #: above the 6h cadence so an ordinary missed slot is not noise, but a day
+    #: like 2026-08-04 (Mac powered off through the window) is caught.
+    discovery_stale_hours: float = 14.0
+    #: Per-source HTTP retry budget; transient 5xx/timeouts must not lose a run.
+    discovery_retries: int = 3
+    #: ntfy.sh topic for phone push. Empty disables that channel entirely — no
+    #: request is made, so nothing leaves the machine unless this is set.
+    ntfy_topic: str = ""
+
+    @property
+    def discovery_log(self) -> Path:
+        """Structured per-source run records (JSON lines)."""
+        return self.runs_dir / "discovery.jsonl"
+
     # Auto-submit is OFF by default; only ATSs in this set may be auto-submitted.
     auto_submit_allowlist: set[ATSKind] = field(default_factory=set)
 
@@ -81,6 +100,8 @@ def load_settings() -> Settings:
         s.ollama_model = model
     if host := os.environ.get("AUTOAPPLY_OLLAMA_HOST"):
         s.ollama_host = host
+    if topic := os.environ.get("AUTOAPPLY_NTFY_TOPIC"):
+        s.ntfy_topic = topic.strip()
     if allow := os.environ.get("AUTOAPPLY_AUTO_SUBMIT"):
         # comma-separated ATS kinds, e.g. "greenhouse,lever" (SPEC §10 allowlist)
         s.auto_submit_allowlist = {

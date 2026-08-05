@@ -98,6 +98,101 @@ def sync(
 
 
 @app.command()
+def discover(
+    status: bool = typer.Option(False, "--status", help="Show last run and staleness; exit."),
+    force: bool = typer.Option(False, "--force", help="Ignore the min-interval skip guard."),
+    only: str = typer.Option(
+        None, "--only", help="Comma-separated sources (simplify,ycombinator,referrals)."
+    ),
+    notify_on_failure: bool = typer.Option(
+        True, "--notify/--no-notify", help="Alert on failure or staleness."
+    ),
+) -> None:
+    """Run job discovery. Safe to run unattended from launchd.
+
+    Pure HTTP — no browser, no LLM, no terminal needed. Communicates with the
+    apply step only through SQLite. Exits non-zero if every source failed, so
+    the scheduler sees the failure too.
+    """
+    from autoapply import discovery
+    from autoapply import notify as notify_mod
+
+    settings = load_settings()
+    settings.ensure_dirs()
+
+    if status:
+        _print_discovery_status(settings, discovery)
+        return
+
+    if not force and discovery.should_skip(settings):
+        hours = discovery.staleness_hours(settings.discovery_log) or 0
+        console.print(f"[dim]skipping — last success {hours:.1f}h ago[/]")
+        return
+
+    # Read staleness BEFORE running: once this run succeeds the gap is erased,
+    # and a gap is the failure that actually bites (2026-08-04 — the Mac was
+    # powered off through the window, so no run existed to report anything).
+    gap_hours = discovery.staleness_hours(settings.discovery_log)
+    was_stale = discovery.is_stale(settings)
+
+    names = tuple(s.strip() for s in only.split(",")) if only else None
+    results = discovery.discover(settings, only=names)
+
+    if was_stale and gap_hours is not None and notify_on_failure:
+        msg = f"no successful discovery for {gap_hours:.0f}h — scheduled runs were missed"
+        console.print(f"[yellow]{msg}[/]")
+        notify_mod.notify("autoapply discovery was stale", msg, settings)
+
+    for r in results:
+        if r.ok:
+            console.print(
+                f"[green]{r.source}[/] {r.fetched} fetched, {r.new} new ({r.duration_s}s)"
+            )
+        else:
+            console.print(f"[red]{r.source} failed[/] {r.error}")
+
+    failed = [r for r in results if not r.ok]
+    if failed and notify_on_failure:
+        detail = "; ".join(f"{r.source}: {r.error[:80]}" for r in failed)
+        sent = notify_mod.notify("autoapply discovery failed", detail, settings)
+        console.print(f"[dim]alerted via: {', '.join(sent) or 'nothing configured'}[/]")
+    if results and not any(r.ok for r in results):
+        raise typer.Exit(1)
+
+
+def _print_discovery_status(settings, discovery) -> None:
+    """Last outcome per source plus staleness — the 'did it silently die?' view."""
+    hours = discovery.staleness_hours(settings.discovery_log)
+    if hours is None:
+        console.print("[red]no successful discovery on record[/]")
+    else:
+        colour = "red" if discovery.is_stale(settings) else "green"
+        console.print(
+            f"[{colour}]last success {hours:.1f}h ago[/] "
+            f"(stale after {settings.discovery_stale_hours:.0f}h)"
+        )
+    records = discovery.read_records(settings.discovery_log)
+    latest: dict[str, dict] = {}
+    for rec in records:
+        latest[rec.get("source", "?")] = rec
+    if not latest:
+        console.print("[dim]no runs logged yet — run `autoapply discover`[/]")
+        return
+    table = Table(box=None, pad_edge=False)
+    for col in ("source", "ok", "fetched", "new", "when"):
+        table.add_column(col)
+    for name, rec in sorted(latest.items()):
+        table.add_row(
+            name,
+            "[green]yes[/]" if rec.get("ok") else "[red]no[/]",
+            str(rec.get("fetched", 0)),
+            str(rec.get("new", 0)),
+            str(rec.get("ts", ""))[:19],
+        )
+    console.print(table)
+
+
+@app.command()
 def yc() -> None:
     """Pull new-grad-eligible YC startup roles into the job table.
 
