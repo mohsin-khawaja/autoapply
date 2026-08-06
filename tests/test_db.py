@@ -64,6 +64,26 @@ def test_application_idempotent_and_status_validation(conn):
         db.record_application(conn, job_id="j1", status="bogus")
 
 
+def test_waas_statuses_accepted(conn):
+    _upsert(conn, jid="w1")
+    for status in ("messaged", "deferred", "replied"):
+        db.record_application(conn, job_id="w1", status=status)
+        assert db.application_status(conn, "w1") == status
+
+
+def test_list_followups_excludes_replied_and_recent(conn):
+    for jid in ("old", "recent", "answered"):
+        _upsert(conn, jid=jid)
+    old, recent = "2026-07-01T00:00:00+00:00", "2026-07-09T00:00:00+00:00"
+    db.record_application(conn, job_id="old", status="messaged", submitted_at=old)
+    db.record_application(conn, job_id="recent", status="messaged", submitted_at=recent)
+    db.record_application(conn, job_id="answered", status="replied", submitted_at=old)
+
+    rows = db.list_followups(conn, before_iso="2026-07-05T00:00:00+00:00")
+    ids = [r["job_id"] for r in rows]
+    assert ids == ["old"]  # recent is after cutoff; answered is replied
+
+
 def test_answer_cache_roundtrip(conn):
     assert db.get_answer(conn, "h1", "Acme") is None
     db.put_answer(
