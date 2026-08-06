@@ -282,20 +282,33 @@ def queue_add(
     if top is not None:
         # Over-fetch, then drop the login-walled rows so --top N really yields
         # N postings the runner can fill rather than N rows it will mark manual.
-        pool = db.list_jobs(conn, min_score=min_score, limit=top * 20 if fillable_only else top)
-        # Drop anything already attempted, otherwise those rows eat the N slots
-        # and are only discarded later by the INSERT OR IGNORE — "--top 40"
-        # would report 40 tracked and queue nothing.
-        tracked = {r["job_id"] for r in conn.execute("SELECT job_id FROM applications")}
-        pool = [j for j in pool if j.id not in tracked]
+        # Selection happens in SQL: untried fillable postings can sit far below
+        # the top-N by score, so filtering a score-ordered page in Python misses
+        # them entirely and queues nothing.
         if fillable_only:
-            pool = [j for j in pool if (j.ats or "") not in _ACCOUNT_WALLED]
-            # Spend the N slots on ATSs that can actually be completed. A
-            # 'generic' posting is usually a careers page with no inline form,
-            # so a high score there still ends the run in a dead end.
-            rank = {"greenhouse": 0, "lever": 1, "ashby": 2}
-            pool.sort(key=lambda j: (rank.get(j.ats or "", 3), -j.score))
-        ids = [j.id for j in pool[:top]]
+            walled = tuple(_ACCOUNT_WALLED)
+            rows = conn.execute(
+                f"""SELECT j.id FROM jobs j
+                    LEFT JOIN applications a ON a.job_id = j.id
+                    WHERE j.active = 1 AND j.is_visible = 1 AND j.score >= ?
+                      AND a.job_id IS NULL
+                      AND COALESCE(j.ats, '') NOT IN ({",".join("?" * len(walled))})
+                    -- Spend the N slots on ATSs that can actually complete an
+                    -- application; a high-scoring 'generic' row is usually a
+                    -- careers page with no inline form.
+                    ORDER BY CASE j.ats
+                               WHEN 'greenhouse' THEN 0
+                               WHEN 'lever'      THEN 1
+                               WHEN 'ashby'      THEN 2
+                               ELSE 3
+                             END,
+                             j.score DESC, j.date_posted DESC
+                    LIMIT ?""",
+                (min_score, *walled, top),
+            ).fetchall()
+            ids = [r["id"] for r in rows]
+        else:
+            ids = [j.id for j in db.list_jobs(conn, min_score=min_score, limit=top)]
     elif job_id:
         rows = conn.execute(
             "SELECT id FROM jobs WHERE id LIKE ?", (job_id + "%",)
