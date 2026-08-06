@@ -12,3 +12,4 @@ assets/*
 .autoapply/
 .ruff_cache/
 .pytest_cache/
+.DS_Store
