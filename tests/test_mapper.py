@@ -276,3 +276,33 @@ def test_bare_location_maps_to_city():
     fp = _plan([FormField(key="l", field_type="text", label="Location", selector="#l")]).fields[0]
     assert fp.value == "Berkeley"
     assert not fp.needs_input
+
+
+def test_split_radio_options_do_not_each_become_a_blocker():
+    """Some forms emit each radio choice as its own field labelled "YES"/"NO".
+
+    Seen live on a Greenhouse form: two unmapped fields, two blockers, and the
+    application stalled at needs_input despite everything else being filled.
+    """
+    fields = [
+        FormField(key="y", field_type="radio", label="YES", selector="#y"),
+        FormField(key="n", field_type="radio", label="NO", selector="#n"),
+    ]
+    plan = _plan(fields)
+    assert plan.unresolved == [], [f.field.label for f in plan.unresolved]
+
+
+def test_a_real_radio_group_with_options_still_maps():
+    """A radio group that carries its question and options is unaffected."""
+    f = FormField(
+        key="a", field_type="radio",
+        label="Are you legally authorized to work in the United States?",
+        selector="#a", options=["Yes", "No"],
+    )
+    fp = _plan([f]).fields[0]
+    assert fp.value == "Yes" and not fp.needs_input
+
+
+def test_required_split_radio_still_blocks():
+    f = FormField(key="y", field_type="radio", label="YES", selector="#y", required=True)
+    assert _plan([f]).unresolved

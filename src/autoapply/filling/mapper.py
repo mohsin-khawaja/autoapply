@@ -147,7 +147,10 @@ def _is_optional_skippable(f: FormField) -> bool:
     empty optional text box. Optional dropdowns still go through mapping, since
     some render with a pre-selected value that matters.
     """
-    if f.field_type == "checkbox":
+    # Radios are included: some forms emit each choice as its own field, so a
+    # single yes/no question arrives as two fields labelled "YES" and "NO" with
+    # the question text lost. Those were counted as two blockers apiece.
+    if f.field_type in ("checkbox", "radio") and not f.options:
         return synonyms.match_key(
             label=f.label, name=f.name or "", field_id=f.attrs.get("id", ""),
             aria=f.attrs.get("aria-label", ""), autocomplete=f.autocomplete or "",
