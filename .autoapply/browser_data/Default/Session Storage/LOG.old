@@ -1,0 +1,15 @@
+2026/08/21-11:48:13.883 7c380 Reusing MANIFEST /Users/mohsinkhawaja/autoapply/.autoapply/browser_data/Default/Session Storage/MANIFEST-000001
+2026/08/21-11:48:13.884 7c380 Recovering log #575
+2026/08/21-11:48:13.885 7c380 Reusing old log /Users/mohsinkhawaja/autoapply/.autoapply/browser_data/Default/Session Storage/000575.log 
+2026/08/21-11:51:02.000 7c383 Level-0 table #579: started
+2026/08/21-11:51:02.007 7c383 Level-0 table #579: 12034 bytes OK
+2026/08/21-11:51:02.013 7c383 Delete type=0 #575
+2026/08/21-11:51:02.016 7c383 Compacting 4@0 + 1@1 files
+2026/08/21-11:51:02.021 7c383 Generated table #580@0: 2373 keys, 48510 bytes
+2026/08/21-11:51:02.021 7c383 Compacted 4@0 + 1@1 files => 48510 bytes
+2026/08/21-11:51:02.023 7c383 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/08/21-11:51:02.023 7c383 Delete type=2 #571
+2026/08/21-11:51:02.023 7c383 Delete type=2 #573
+2026/08/21-11:51:02.023 7c383 Delete type=2 #576
+2026/08/21-11:51:02.023 7c383 Delete type=2 #579
+2026/08/21-11:51:02.023 7c383 Delete type=2 #569

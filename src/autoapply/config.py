@@ -30,6 +30,10 @@ class Settings:
     home: Path = field(default_factory=lambda: _home())
     profile_path: Path = field(default_factory=lambda: REPO_ROOT / "profile.yaml")
 
+    # LLM provider: "anthropic" (API, better answers) or "ollama" (local, free).
+    llm_provider: str = "anthropic"
+    anthropic_model: str = "claude-opus-5"
+
     # Ollama
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b-instruct"
@@ -102,6 +106,10 @@ def load_settings() -> Settings:
         s.ollama_host = host
     if topic := os.environ.get("AUTOAPPLY_NTFY_TOPIC"):
         s.ntfy_topic = topic.strip()
+    if provider := os.environ.get("AUTOAPPLY_LLM"):
+        s.llm_provider = provider.strip().lower()
+    if model := os.environ.get("AUTOAPPLY_ANTHROPIC_MODEL"):
+        s.anthropic_model = model.strip()
     if allow := os.environ.get("AUTOAPPLY_AUTO_SUBMIT"):
         # comma-separated ATS kinds, e.g. "greenhouse,lever" (SPEC §10 allowlist)
         s.auto_submit_allowlist = {

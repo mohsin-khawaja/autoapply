@@ -18,7 +18,7 @@ from typing import Protocol
 
 from autoapply import db
 from autoapply.filling.mapper import question_hash
-from autoapply.ollama import OllamaClient
+from autoapply.llm import ChatClient
 from autoapply.profile import Profile
 
 MAX_WORDS_DEFAULT = 120
@@ -109,7 +109,7 @@ def generate_answer(
     question: str,
     profile: Profile,
     job: JobContext,
-    client: OllamaClient,
+    client: ChatClient,
     *,
     temperature: float = 0.2,
 ) -> str:
@@ -123,7 +123,7 @@ def choose_option(
     options: list[str],
     profile: Profile,
     job: JobContext,
-    client: OllamaClient,
+    client: ChatClient,
     *,
     temperature: float = 0.0,
 ) -> str | None:
@@ -170,7 +170,7 @@ def get_or_generate(
     *,
     profile: Profile,
     job: JobContext,
-    client: OllamaClient,
+    client: ChatClient,
 ) -> str:
     """Return the cached answer for (question, company), generating on a miss.
 

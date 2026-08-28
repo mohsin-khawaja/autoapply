@@ -10,9 +10,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from autoapply import db
+from autoapply import db, llm
 from autoapply.config import load_settings
-from autoapply.ollama import OllamaClient
 from autoapply.profile import load_profile
 from autoapply.sources import simplify
 
@@ -59,11 +58,11 @@ def init() -> None:
     else:
         console.print(f"[yellow]![/] resume missing — drop it at {resume}")
 
-    # Ollama
-    oc = OllamaClient(host=settings.ollama_host, model=settings.ollama_model)
-    ok, msg = oc.health()
-    if not ok:
-        resolved = oc.resolve_model(fallback=settings.ollama_fallback_model)
+    # LLM provider (AUTOAPPLY_LLM=anthropic|ollama)
+    client = llm.make_client(settings)
+    ok, msg = client.health()
+    if not ok and settings.llm_provider == "ollama":
+        resolved = client.resolve_model(fallback=settings.ollama_fallback_model)
         if resolved:
             ok, msg = True, f"Ollama OK (using installed {resolved})"
     console.print(f"[{'green' if ok else 'yellow'}]{'✓' if ok else '!'}[/] {msg}")

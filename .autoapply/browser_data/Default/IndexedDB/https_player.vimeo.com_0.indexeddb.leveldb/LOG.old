@@ -1,0 +1,4 @@
+2026/08/19-00:30:52.535 56294 Reusing MANIFEST /Users/mohsinkhawaja/autoapply/.autoapply/browser_data/Default/IndexedDB/https_player.vimeo.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/08/19-00:30:52.536 56294 Recovering log #11
+2026/08/19-00:30:52.536 56294 Reusing old log /Users/mohsinkhawaja/autoapply/.autoapply/browser_data/Default/IndexedDB/https_player.vimeo.com_0.indexeddb.leveldb/000011.log 
+2026/08/19-00:30:52.557 56294 Manual compaction at level-0 from '\x00\x06\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x07\x00\x00\x00' @ 0 : 0; will stop at (end)

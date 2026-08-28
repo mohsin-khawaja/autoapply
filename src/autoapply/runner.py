@@ -23,12 +23,11 @@ from typing import TYPE_CHECKING
 from rich.console import Console
 from rich.table import Table
 
-from autoapply import db
+from autoapply import db, llm
 from autoapply.ats import base
 from autoapply.browser import launch_context, looks_blocked
 from autoapply.config import Settings
 from autoapply.filling import llm_answers, mapper
-from autoapply.ollama import OllamaClient
 from autoapply.profile import Profile, load_profile
 from autoapply.sources.simplify import classify_ats
 
@@ -94,13 +93,13 @@ def _fill_llm_answers(
     plan: base.FillPlan,
     profile: Profile,
     job: QueuedJob,
-    client: OllamaClient,
+    client: llm.ChatClient,
 ) -> None:
-    """Resolve ``source=="llm"`` fields via the answer cache / Ollama.
+    """Resolve ``source=="llm"`` fields via the answer cache / configured LLM.
 
     Two shapes: a constrained field (has options) asks the model to pick the
     best visible option; a free-text field asks it to write an answer. Both are
-    best-effort — if Ollama is down, or the model returns no valid option, the
+    best-effort — if the provider is down, or returns no valid option, the
     field simply stays needs_input rather than being filled with a guess.
     """
     for fp in plan.fields:
@@ -219,12 +218,10 @@ def process_one(
         fuzzy_threshold=settings.fuzzy_threshold,
     )
 
-    # Keep any single generation well inside the per-job cap — a 7B model on a
-    # long essay prompt can otherwise spend the whole budget on one field.
+    # Keep any single generation well inside the per-job cap — one long essay
+    # prompt must not spend the whole budget on a single field.
     llm_timeout = max(20.0, settings.per_job_seconds / 3) if settings.per_job_seconds else 120.0
-    client = OllamaClient(
-        host=settings.ollama_host, model=settings.ollama_model, timeout=llm_timeout
-    )
+    client = llm.make_client(settings, timeout=llm_timeout)
     # Run on whatever model this machine actually has pulled, so answer
     # generation works offline without matching config exactly.
     resolved = client.resolve_model(fallback=settings.ollama_fallback_model)

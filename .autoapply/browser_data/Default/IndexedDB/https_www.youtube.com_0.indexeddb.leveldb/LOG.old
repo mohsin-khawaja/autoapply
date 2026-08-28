@@ -1,0 +1,4 @@
+2026/08/20-20:00:19.286 925d Reusing MANIFEST /Users/mohsinkhawaja/autoapply/.autoapply/browser_data/Default/IndexedDB/https_www.youtube.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/08/20-20:00:19.287 925d Recovering log #15
+2026/08/20-20:00:19.287 925d Reusing old log /Users/mohsinkhawaja/autoapply/.autoapply/browser_data/Default/IndexedDB/https_www.youtube.com_0.indexeddb.leveldb/000015.log 
+2026/08/20-20:00:19.287 925d Delete type=2 #13
