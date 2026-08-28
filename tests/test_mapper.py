@@ -233,3 +233,46 @@ def test_state_as_a_verb_does_not_map_to_location():
     # ...while a real location field still maps.
     assert k("State") == "identity.location.state"
     assert k("State / Province") == "identity.location.state"
+
+
+def test_optional_unmappable_checkboxes_do_not_block_submission():
+    """A 26-language checkbox matrix must not count as 26 blockers.
+
+    Seen live: one form contributed "Croatian", "Dutch", "Other", "Not
+    Applicable" and 20+ more as unresolved fields across 62 applications,
+    holding the submit gate shut on forms that were otherwise complete.
+    Leaving an optional checkbox unticked IS the answer.
+    """
+    boxes = [
+        FormField(key=f"lang{i}", field_type="checkbox", label=lang, selector=f"#l{i}")
+        for i, lang in enumerate(["Croatian", "Dutch", "Italian", "Other", "Not Applicable"])
+    ]
+    plan = _plan(boxes)
+    assert plan.unresolved == [], [f.field.label for f in plan.unresolved]
+    assert all(fp.value is None for fp in plan.fields)  # nothing invented
+
+
+def test_a_required_checkbox_still_blocks():
+    """Consent boxes are required and must still reach a human."""
+    f = FormField(
+        key="c", field_type="checkbox", label="I consent to the privacy policy",
+        selector="#c", required=True,
+    )
+    assert _plan([f]).unresolved
+
+
+def test_mapped_checkbox_is_still_filled_from_profile():
+    """The skip only applies to fields with no profile mapping."""
+    f = FormField(
+        key="w", field_type="checkbox",
+        label="Are you legally authorized to work in the United States?", selector="#w",
+    )
+    fp = _plan([f]).fields[0]
+    assert fp.source != "optional_skip"
+    assert fp.value == "Yes"
+
+
+def test_bare_location_maps_to_city():
+    fp = _plan([FormField(key="l", field_type="text", label="Location", selector="#l")]).fields[0]
+    assert fp.value == "Berkeley"
+    assert not fp.needs_input

@@ -139,6 +139,21 @@ def is_unfabricable_fact(f: FormField) -> bool:
     return any(marker in blob for marker in _UNFABRICABLE)
 
 
+
+def _is_optional_skippable(f: FormField) -> bool:
+    """True when an unmapped optional field is safely left untouched.
+
+    Only for fields where "blank" is a real answer: an unticked checkbox or an
+    empty optional text box. Optional dropdowns still go through mapping, since
+    some render with a pre-selected value that matters.
+    """
+    if f.field_type == "checkbox":
+        return synonyms.match_key(
+            label=f.label, name=f.name or "", field_id=f.attrs.get("id", ""),
+            aria=f.attrs.get("aria-label", ""), autocomplete=f.autocomplete or "",
+        ) is None
+    return False
+
 def build_plan(
     fields: list[FormField],
     profile: Profile,
@@ -183,7 +198,16 @@ def _plan_field(
             return FieldPlan(f, resume_path, "file", 1.0, False, note="resume upload")
         return FieldPlan(f, None, "unmapped", 0.0, True, note="no resume configured")
 
-    # 0. Verifiable credentials are checked BEFORE any mapping. Otherwise a
+    # 0a. An OPTIONAL field we cannot map is not a blocker — leaving it alone is
+    # the correct answer. Forms carry piles of these (a 26-language checkbox
+    # matrix, "Other", "Not Applicable"), and counting each as unresolved kept
+    # the submit gate shut on applications that were otherwise complete.
+    # Marked resolved with no value so adapters skip it and it never reaches
+    # FillPlan.unresolved.
+    if not f.required and _is_optional_skippable(f):
+        return FieldPlan(f, None, "optional_skip", 1.0, False, note="optional — left blank")
+
+    # 0b. Verifiable credentials are checked BEFORE any mapping. Otherwise a
     # label like "Please state the GPA and degree obtained" matches the bare
     # "state" synonym and fills the applicant's home state ("CA") into a GPA
     # box — a wrong answer on a live application, scored profile/100%, which

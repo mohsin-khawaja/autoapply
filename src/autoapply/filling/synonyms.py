@@ -29,8 +29,9 @@ SYNONYMS: dict[str, list[str]] = {
     "identity.links.twitter": ["twitter", "x profile", "x handle", "x (twitter)", "x/twitter"],
     "identity.links.website": ["website", "portfolio", "personal site", "personal website"],
     "identity.location.city": [
-        "city", "current city", "where are you currently located", "where are you located",
-        "current location", "location (city)", "your location", "where are you based",
+        "city", "current city", "location", "your location", "where are you based",
+        "where are you currently located", "where are you located",
+        "current location", "location (city)",
     ],
     # "state" is also a verb. "Please state your desired salary" must not map to
     # the home state, so the verb usages are excluded before the noun matches.
