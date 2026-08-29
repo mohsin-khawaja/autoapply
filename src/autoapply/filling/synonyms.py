@@ -23,6 +23,13 @@ SYNONYMS: dict[str, list[str]] = {
         "last name", "family name", "surname", "last_name", "family-name", "lname",
     ],
     "identity.email": ["email", "e-mail", "email address"],
+    # Consent prompts quote "phone number" in their text ("If you provided a
+    # phone number, do you consent to..."), so they are matched before the
+    # phone field itself or they fill the number into a yes/no consent box.
+    "answers.sms_consent": [
+        "consent to receiving", "receive text", "text messages", "sms",
+        "follow-up communications", "consent to receive",
+    ],
     "identity.phone": ["phone", "mobile", "telephone", "phone number", "tel"],
     "identity.links.linkedin": ["linkedin"],
     "identity.links.github": ["github"],
@@ -70,6 +77,11 @@ SYNONYMS: dict[str, list[str]] = {
         "currently an employee", "current employee", "employee of",
         "worked for", "worked at", "ever worked for", "ever worked at",
         "previously worked",
+    ],
+    "answers.pronouns": ["pronouns", "preferred pronouns", "your pronouns"],
+    "answers.english_proficiency": [
+        "english proficiency", "english level", "level of english",
+        "proficiency in english", "english language proficiency",
     ],
     "answers.criminal_record_disclosures": ["criminal", "convicted", "felony"],
     "answers.security_clearance": ["security clearance", "clearance"],

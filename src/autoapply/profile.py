@@ -148,6 +148,10 @@ class Answers(BaseModel):
     # role, with or without reasonable accommodation?"). Yours to change.
     can_perform_essential_functions: str = "Yes"
     citizenship_status: str = "U.S. Citizen"
+    pronouns: str = ""
+    english_proficiency: str = ""
+    # Consent to recruiter follow-up texts. Some forms make this required.
+    sms_consent: str = "No"
     criminal_record_disclosures: str = "decline_unless_required"
     security_clearance: str = "No"
     eeo: EEO = Field(default_factory=EEO)

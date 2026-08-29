@@ -192,6 +192,69 @@ def _print_discovery_status(settings, discovery) -> None:
 
 
 @app.command()
+def away(
+    interval: str = typer.Option("45m", "--interval", help="Sleep between cycles (e.g. 45m, 30s)."),
+    max_jobs: int = typer.Option(40, "--max", help="Jobs to work per cycle."),
+    min_score: int = typer.Option(0, "--min-score", help="Score floor when topping up the queue."),
+    cycles: int = typer.Option(None, "--cycles", help="Stop after N cycles (default: forever)."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="One cycle, no applying."),
+) -> None:
+    """Autonomous mode: discover, queue, apply — on a loop until killed.
+
+    Unlike scripts/away_run.sh this survives an empty queue: it sleeps and tries
+    again next cycle instead of exiting, so leaving it running actually keeps
+    applying. One summary line per cycle.
+    """
+    from autoapply import away as away_mod
+
+    settings = load_settings()
+    settings.ensure_dirs()
+    seconds = _parse_interval(interval)
+
+    if dry_run:
+        conn = db.connect(settings.db_path)
+        try:
+            queued = away_mod._top_up_queue(
+                conn, settings, batch=max_jobs, min_score=min_score
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        console.print(
+            f"[green]dry run[/] — would work {max_jobs} job(s) per cycle every "
+            f"{seconds / 60:.0f}m; queued {queued} now. No applications sent."
+        )
+        return
+
+    if not settings.auto_submit_allowlist:
+        console.print(
+            "[yellow]note:[/] no ATS allowlist — nothing will auto-submit. "
+            "Set AUTOAPPLY_AUTO_SUBMIT=greenhouse,lever,ashby to submit."
+        )
+    away_mod.away(
+        settings,
+        interval_seconds=seconds,
+        batch=max_jobs,
+        min_score=min_score,
+        auto_submit=bool(settings.auto_submit_allowlist),
+        max_cycles=cycles,
+    )
+
+
+def _parse_interval(text: str) -> float:
+    """"45m" -> 2700.0. Accepts s/m/h suffixes; a bare number means seconds."""
+    t = text.strip().lower()
+    mult = {"s": 1.0, "m": 60.0, "h": 3600.0}.get(t[-1:], None)
+    try:
+        value = float(t[:-1]) * mult if mult else float(t)
+    except ValueError as e:
+        raise typer.BadParameter(f"bad interval {text!r} — try 45m, 2h, or 900") from e
+    if value < 30:
+        raise typer.BadParameter("interval must be at least 30s")
+    return value
+
+
+@app.command()
 def yc() -> None:
     """Pull new-grad-eligible YC startup roles into the job table.
 

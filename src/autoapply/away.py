@@ -1,0 +1,182 @@
+"""Autonomous away mode: discover -> queue -> apply, on a loop, until killed.
+
+The single-pass shell script exits the moment the queue drains, so a run left
+alone stops minutes after it starts and the machine sits idle. This loop keeps
+going: an empty cycle is a normal outcome, not a reason to exit.
+
+Each cycle prints one summary line so a long unattended run stays readable:
+
+    cycle 3 | 14:32 | new 52 | queued 12 | applied 9 (2 submitted, 5 need you,
+    2 manual) | next wake 15:17
+
+Never raises out of a cycle — discovery outages, browser deaths, and bad
+postings are all recorded and the loop continues to the next cycle.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import sqlite3
+import time
+from dataclasses import dataclass
+
+from rich.console import Console
+
+from autoapply import db
+from autoapply.config import Settings
+
+console = Console()
+
+
+@dataclass(slots=True)
+class CycleResult:
+    """What one discover->queue->apply pass accomplished."""
+
+    cycle: int
+    new_jobs: int = 0
+    queued: int = 0
+    applied: int = 0
+    submitted: int = 0
+    needs_input: int = 0
+    manual: int = 0
+    error: str = ""
+
+    def line(self, next_wake: str) -> str:
+        if self.error:
+            return f"cycle {self.cycle} | error: {self.error[:80]} | next wake {next_wake}"
+        return (
+            f"cycle {self.cycle} | new {self.new_jobs} | queued {self.queued} | "
+            f"applied {self.applied} ({self.submitted} submitted, "
+            f"{self.needs_input} need you, {self.manual} manual) | "
+            f"next wake {next_wake}"
+        )
+
+
+def _submitted_count(conn: sqlite3.Connection) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) n FROM applications WHERE submitted_at IS NOT NULL"
+    ).fetchone()["n"]
+
+
+def _status_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    return {
+        r["status"]: r["n"]
+        for r in conn.execute("SELECT status, COUNT(*) n FROM applications GROUP BY status")
+    }
+
+
+def run_cycle(
+    settings: Settings,
+    *,
+    cycle: int,
+    batch: int,
+    min_score: int,
+    auto_submit: bool,
+) -> CycleResult:
+    """One discover -> queue -> apply pass. Never raises."""
+    from autoapply import discovery, runner
+
+    res = CycleResult(cycle=cycle)
+    conn = db.connect(settings.db_path)
+    try:
+        before_status = _status_counts(conn)
+        before_submitted = _submitted_count(conn)
+
+        # 1. Discovery. Its own min-interval guard makes a too-soon call a no-op,
+        # so this is cheap to attempt every cycle.
+        try:
+            for r in discovery.discover(settings):
+                res.new_jobs += r.new
+        except Exception as e:  # noqa: BLE001 - a dead board must not end the loop
+            res.error = f"discovery: {e}"
+
+        # 2. Top the queue up with fillable, untried postings.
+        res.queued = _top_up_queue(conn, settings, batch=batch, min_score=min_score)
+        conn.commit()
+    finally:
+        conn.close()
+
+    # 3. Apply. run_queue owns its own connection and browser lifecycle.
+    try:
+        runner.run_queue(
+            settings,
+            dry_run=False,
+            auto_submit=auto_submit,
+            max_per_run=batch,
+            unattended=True,
+        )
+    except Exception as e:  # noqa: BLE001 - browser death must not end the loop
+        res.error = f"apply: {e}"
+
+    conn = db.connect(settings.db_path)
+    try:
+        after_status = _status_counts(conn)
+        res.submitted = _submitted_count(conn) - before_submitted
+        for key, attr in (("needs_input", "needs_input"), ("manual", "manual")):
+            setattr(res, attr, after_status.get(key, 0) - before_status.get(key, 0))
+        res.applied = res.submitted + res.needs_input + res.manual
+    finally:
+        conn.close()
+    return res
+
+
+def _top_up_queue(
+    conn: sqlite3.Connection, settings: Settings, *, batch: int, min_score: int
+) -> int:
+    """Queue untried, fillable postings — fillable ATSs first. Returns count added.
+
+    Mirrors `queue add --top N` but inline, so a cycle never shells out.
+    """
+    from autoapply.runner import _ACCOUNT_WALLED, enqueue
+
+    walled = tuple(_ACCOUNT_WALLED)
+    rows = conn.execute(
+        f"""SELECT j.id FROM jobs j
+            LEFT JOIN applications a ON a.job_id = j.id
+            WHERE j.active = 1 AND j.is_visible = 1 AND j.score >= ?
+              AND a.job_id IS NULL
+              AND COALESCE(j.ats, '') NOT IN ({",".join("?" * len(walled))})
+            ORDER BY CASE j.ats
+                       WHEN 'greenhouse' THEN 0
+                       WHEN 'lever'      THEN 1
+                       WHEN 'ashby'      THEN 2
+                       ELSE 3
+                     END,
+                     j.score DESC, j.date_posted DESC
+            LIMIT ?""",
+        (min_score, *walled, batch),
+    ).fetchall()
+    return enqueue(conn, [r["id"] for r in rows])
+
+
+def away(
+    settings: Settings,
+    *,
+    interval_seconds: float = 2700.0,
+    batch: int = 40,
+    min_score: int = 0,
+    auto_submit: bool = True,
+    max_cycles: int | None = None,
+) -> None:
+    """Loop until killed. An empty cycle sleeps and tries again, never exits."""
+    cycle = 0
+    started = dt.datetime.now()
+    console.print(
+        f"[bold]away mode[/] — batch {batch}, min-score {min_score}, "
+        f"interval {interval_seconds / 60:.0f}m. Ctrl-C or `pkill -f 'autoapply away'` to stop."
+    )
+    while max_cycles is None or cycle < max_cycles:
+        cycle += 1
+        result = run_cycle(
+            settings, cycle=cycle, batch=batch, min_score=min_score, auto_submit=auto_submit
+        )
+        wake = dt.datetime.now() + dt.timedelta(seconds=interval_seconds)
+        console.print(f"[bold cyan]{result.line(wake.strftime('%H:%M'))}[/]")
+        if max_cycles is not None and cycle >= max_cycles:
+            break
+        try:
+            time.sleep(interval_seconds)
+        except KeyboardInterrupt:
+            break
+    elapsed = dt.datetime.now() - started
+    console.print(f"[dim]away mode stopped after {cycle} cycle(s), {elapsed}[/]")

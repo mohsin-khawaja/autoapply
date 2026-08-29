@@ -461,3 +461,59 @@ def test_max_per_run_zero_applies_to_nothing(tmp_path, conn, feed_listings):
     enqueue(conn, [r["id"] for r in conn.execute("SELECT id FROM jobs")])
     conn.commit()
     assert runner.queued_jobs(conn, 0) == []
+
+
+def test_interval_parsing():
+    from autoapply.cli import _parse_interval
+
+    assert _parse_interval("45m") == 2700.0
+    assert _parse_interval("2h") == 7200.0
+    assert _parse_interval("90") == 90.0
+    import typer
+
+    for bad in ("nonsense", "10s"):  # 10s is below the 30s floor
+        with pytest.raises(typer.BadParameter):
+            _parse_interval(bad)
+
+
+def test_away_survives_an_empty_cycle(monkeypatch, tmp_path):
+    """The whole point: an empty queue must sleep and retry, never exit."""
+    from autoapply import away as away_mod
+    from autoapply.config import Settings
+
+    cycles = []
+
+    def fake_run_cycle(settings, *, cycle, batch, min_score, auto_submit):
+        cycles.append(cycle)
+        return away_mod.CycleResult(cycle=cycle)  # all zeros — nothing to do
+
+    monkeypatch.setattr(away_mod, "run_cycle", fake_run_cycle)
+    monkeypatch.setattr(away_mod.time, "sleep", lambda _s: None)
+    away_mod.away(Settings(home=tmp_path), interval_seconds=60, max_cycles=3)
+    assert cycles == [1, 2, 3], "an empty cycle must not end the loop"
+
+
+def test_away_continues_after_a_failing_cycle(monkeypatch, tmp_path):
+    """A browser death or dead board must not end an unattended run."""
+    from autoapply import away as away_mod
+    from autoapply.config import Settings
+
+    seen = []
+
+    def fake_run_cycle(settings, *, cycle, batch, min_score, auto_submit):
+        seen.append(cycle)
+        return away_mod.CycleResult(cycle=cycle, error="apply: browser closed")
+
+    monkeypatch.setattr(away_mod, "run_cycle", fake_run_cycle)
+    monkeypatch.setattr(away_mod.time, "sleep", lambda _s: None)
+    away_mod.away(Settings(home=tmp_path), interval_seconds=60, max_cycles=2)
+    assert seen == [1, 2]
+
+
+def test_cycle_summary_line_is_one_line():
+    from autoapply.away import CycleResult
+
+    line = CycleResult(cycle=3, new_jobs=52, queued=12, applied=9,
+                       submitted=2, needs_input=5, manual=2).line("15:17")
+    assert "\n" not in line
+    assert "cycle 3" in line and "2 submitted" in line and "next wake 15:17" in line
