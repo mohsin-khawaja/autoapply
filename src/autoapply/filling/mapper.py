@@ -113,11 +113,42 @@ def _yes_no_option(value: str, options: list[str]) -> str | None:
     return None
 
 
+#: Words that flip an answer's meaning. Fuzzy similarity ignores them, so they
+#: are checked separately.
+_NEGATIONS = (" not ", "n't", " no ", "decline", "prefer not", "never")
+
+
+def _is_negative(text: str) -> bool:
+    return any(n in f" {text.lower().strip()} " for n in _NEGATIONS)
+
+
+def polarity_ok(value: str, option: str) -> bool:
+    """False when matching ``option`` would invert a negative profile answer.
+
+    Real case: profile "I am not a protected veteran" fuzzy-matched the option
+    "I am a veteran" at 85.5 — above the 82 threshold — and would have filed a
+    false veteran claim on a live application. Similarity treats "not" as one
+    small token; the meaning is the opposite.
+
+    Only constrains negative profile values. A positive value ("Asian") may
+    legitimately match an option containing "not" ("Asian (Not Hispanic or
+    Latino)"), so that direction is left alone.
+    """
+    return not (_is_negative(value) and not _is_negative(option))
+
+
 def _fuzzy_option(value: str, options: list[str], threshold: int) -> tuple[str | None, float]:
-    """Best option match for ``value`` via rapidfuzz. Returns (option, score 0..100)."""
+    """Best option match for ``value`` via rapidfuzz. Returns (option, score 0..100).
+
+    Candidates that would invert the answer's meaning are removed before
+    scoring, so a safe lower-scoring option can still win.
+    """
     if not options:
         return None, 0.0
-    match = process.extractOne(value, options, scorer=fuzz.WRatio)
+    safe = [o for o in options if polarity_ok(value, o)]
+    if not safe:
+        return None, 0.0
+    match = process.extractOne(value, safe, scorer=fuzz.WRatio)
     if match is None:
         return None, 0.0
     option, score, _ = match

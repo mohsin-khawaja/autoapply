@@ -306,3 +306,50 @@ def test_a_real_radio_group_with_options_still_maps():
 def test_required_split_radio_still_blocks():
     f = FormField(key="y", field_type="radio", label="YES", selector="#y", required=True)
     assert _plan([f]).unresolved
+
+
+def test_negated_answer_never_matches_its_opposite():
+    """Live bug: "I am not a protected veteran" filled "I am a veteran".
+
+    rapidfuzz scores that pair 85.5 — above the 82 threshold — because "not" is
+    one small token. It would have filed a false veteran claim on a real
+    application.
+    """
+    from autoapply.filling.mapper import _fuzzy_option, polarity_ok
+
+    assert not polarity_ok("I am not a protected veteran", "I am a veteran")
+    opt, _ = _fuzzy_option(
+        "I am not a protected veteran",
+        ["I am a veteran", "I decline to self identify"],
+        82,
+    )
+    assert opt != "I am a veteran"
+
+
+def test_the_correct_negative_option_still_wins():
+    from autoapply.filling.mapper import _fuzzy_option
+
+    opt, score = _fuzzy_option(
+        "I am not a protected veteran",
+        ["I am a veteran", "I am not a protected veteran"],
+        82,
+    )
+    assert opt == "I am not a protected veteran" and score == 100.0
+
+
+def test_a_positive_answer_may_match_an_option_containing_not():
+    """"Asian" -> "Asian (Not Hispanic or Latino)" must keep working."""
+    from autoapply.filling.mapper import _fuzzy_option, polarity_ok
+
+    assert polarity_ok("Asian", "Asian (Not Hispanic or Latino)")
+    opt, _ = _fuzzy_option("Asian", ["Asian (Not Hispanic or Latino)", "White"], 82)
+    assert opt == "Asian (Not Hispanic or Latino)"
+
+
+def test_veteran_field_end_to_end_is_never_inverted():
+    f = FormField(
+        key="v", field_type="select", label="Veteran status", selector="#v",
+        options=["I am a veteran", "I decline to self identify"],
+    )
+    fp = _plan([f]).fields[0]
+    assert fp.value != "I am a veteran", "must not claim veteran status"
