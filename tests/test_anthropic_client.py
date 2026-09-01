@@ -178,3 +178,38 @@ def test_missing_dotenv_is_not_an_error(tmp_path):
 
 def test_default_model_is_the_cost_efficient_one():
     assert Settings().anthropic_model == "claude-haiku-4-5"
+
+
+def test_effort_is_only_sent_to_models_that_accept_it():
+    """Haiku 4.5 rejects output_config.effort with a 400 — seen live."""
+    from autoapply.anthropic_client import supports_effort
+
+    assert not supports_effort("claude-haiku-4-5")
+    assert supports_effort("claude-opus-5")
+    assert supports_effort("claude-sonnet-5")
+
+
+def test_haiku_request_omits_output_config():
+    seen = {}
+
+    def create(**kw):
+        seen.update(kw)
+        return _fake_response()
+
+    c = _stub(create)
+    c.model = "claude-haiku-4-5"
+    c.chat([{"role": "user", "content": "q"}])
+    assert "output_config" not in seen
+
+
+def test_effort_model_still_gets_output_config():
+    seen = {}
+
+    def create(**kw):
+        seen.update(kw)
+        return _fake_response()
+
+    c = _stub(create)
+    c.model = "claude-opus-5"
+    c.chat([{"role": "user", "content": "q"}])
+    assert seen["output_config"] == {"effort": "low"}

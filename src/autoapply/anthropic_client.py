@@ -25,6 +25,14 @@ import anthropic
 #: Answers are a few sentences at most; a form field is not an essay.
 _MAX_TOKENS = 1024
 
+#: ``output_config.effort`` is rejected with a 400 on the small/older models.
+#: Only the Opus family, Sonnet 5 and Fable accept it.
+_EFFORT_MODELS = ("claude-opus-", "claude-sonnet-5", "claude-fable-", "claude-mythos-")
+
+
+def supports_effort(model: str) -> bool:
+    return model.startswith(_EFFORT_MODELS)
+
 
 class AnthropicError(RuntimeError):
     """The Anthropic API is unreachable, unauthenticated, or refused."""
@@ -118,14 +126,19 @@ class AnthropicClient:
         if not turns:
             raise AnthropicError("chat() requires at least one user message")
         try:
+            name = model or self.model
+            extra: dict[str, object] = {}
+            if self.effort and supports_effort(name):
+                # Short, well-specified answers: minimum depth is enough and
+                # keeps per-application cost near the floor. Rejected outright
+                # by Haiku, hence the guard.
+                extra["output_config"] = {"effort": self.effort}
             resp = self._api().messages.create(
-                model=model or self.model,
+                model=name,
                 max_tokens=self.max_tokens,
                 system=system,
                 messages=turns,
-                # Short, well-specified answers: minimum depth is enough and
-                # keeps per-application cost near the floor.
-                output_config={"effort": self.effort},
+                **extra,
             )
         except anthropic.AuthenticationError as e:
             raise AnthropicError(f"Anthropic auth failed: {e}") from e
