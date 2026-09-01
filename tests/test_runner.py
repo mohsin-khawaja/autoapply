@@ -581,3 +581,43 @@ def test_failed_cycle_retries_sooner_than_the_full_interval(monkeypatch, tmp_pat
     )
     away_mod.away(Settings(home=tmp_path), interval_seconds=2700, max_cycles=2)
     assert slept and slept[0] <= 120, slept
+
+
+def test_away_requeues_stalled_applications_when_nothing_untried_remains(conn, feed_listings):
+    """770 needs_input jobs on fillable ATSs were the only submission pool left.
+
+    They are filled but for a field or two, and the mapper keeps gaining
+    answers, so a retry often completes them.
+    """
+    from autoapply import away as away_mod
+    from autoapply.config import Settings
+
+    now = datetime.now(UTC).isoformat()
+    db.upsert_job(
+        conn, id="gh1", company_name="C", title="Software Engineer I",
+        url="https://boards.greenhouse.io/x", now_iso=now, ats="greenhouse", score=80,
+    )
+    db.record_application(conn, job_id="gh1", status="needs_input")
+    conn.commit()
+
+    added = away_mod._top_up_queue(conn, Settings(), batch=10, min_score=0)
+    assert added == 1
+    assert conn.execute(
+        "SELECT status FROM applications WHERE job_id='gh1'"
+    ).fetchone()["status"] == "queued"
+
+
+def test_away_never_queues_generic_dead_ends(conn):
+    """generic: 1,359 attempts, zero submissions — never spend a slot on one."""
+    from autoapply import away as away_mod
+    from autoapply.config import Settings
+
+    now = datetime.now(UTC).isoformat()
+    db.upsert_job(
+        conn, id="gen1", company_name="BigCo", title="Software Engineer I",
+        url="https://careers.bigco.com/x", now_iso=now, ats="generic", score=100,
+    )
+    conn.commit()
+    away_mod._top_up_queue(conn, Settings(), batch=10, min_score=0)
+    row = conn.execute("SELECT status FROM applications WHERE job_id='gen1'").fetchone()
+    assert row is None, "a generic posting must never be queued"

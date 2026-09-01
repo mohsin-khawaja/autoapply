@@ -131,26 +131,51 @@ def _top_up_queue(
 
     Mirrors `queue add --top N` but inline, so a cycle never shells out.
     """
-    from autoapply.runner import _ACCOUNT_WALLED, enqueue
+    from autoapply.runner import enqueue
 
-    walled = tuple(_ACCOUNT_WALLED)
+    # Only ATSs that have ever produced a submission. 'generic' postings are
+    # careers pages with no inline form: 1,359 attempts, 1,359 "no form found",
+    # zero submissions — queueing them spends the batch on guaranteed dead ends.
+    fillable = ("greenhouse", "lever", "ashby")
     rows = conn.execute(
-        f"""SELECT j.id FROM jobs j
-            LEFT JOIN applications a ON a.job_id = j.id
-            WHERE j.active = 1 AND j.is_visible = 1 AND j.score >= ?
-              AND a.job_id IS NULL
-              AND COALESCE(j.ats, '') NOT IN ({",".join("?" * len(walled))})
-            ORDER BY CASE j.ats
-                       WHEN 'greenhouse' THEN 0
-                       WHEN 'lever'      THEN 1
-                       WHEN 'ashby'      THEN 2
-                       ELSE 3
-                     END,
-                     j.score DESC, j.date_posted DESC
-            LIMIT ?""",
-        (min_score, *walled, batch),
+        """SELECT j.id FROM jobs j
+           LEFT JOIN applications a ON a.job_id = j.id
+           WHERE j.active = 1 AND j.is_visible = 1 AND j.score >= ?
+             AND a.job_id IS NULL
+             AND j.ats IN (?, ?, ?)
+           ORDER BY CASE j.ats WHEN 'greenhouse' THEN 0 WHEN 'lever' THEN 1 ELSE 2 END,
+                    j.score DESC, j.date_posted DESC
+           LIMIT ?""",
+        (min_score, *fillable, batch),
     ).fetchall()
-    return enqueue(conn, [r["id"] for r in rows])
+    added = enqueue(conn, [r["id"] for r in rows])
+    if added >= batch:
+        return added
+
+    # Nothing untried left. Re-work applications that stalled on a missing field:
+    # they are already filled but for a question or two, and the mapper keeps
+    # gaining answers (pronouns, English proficiency, consent boxes, the option
+    # and checkbox fixes), so a retry now often completes and submits.
+    return added + _requeue_stalled(conn, limit=batch - added)
+
+
+def _requeue_stalled(conn: sqlite3.Connection, *, limit: int) -> int:
+    """Return needs_input/failed fillable applications to the queue. Returns count."""
+    if limit <= 0:
+        return 0
+    rows = conn.execute(
+        """SELECT a.job_id FROM applications a JOIN jobs j ON j.id = a.job_id
+           WHERE a.status IN ('needs_input', 'failed')
+             AND j.active = 1 AND j.ats IN ('greenhouse', 'lever', 'ashby')
+           ORDER BY j.score DESC
+           LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    for r in rows:
+        conn.execute(
+            "UPDATE applications SET status = 'queued' WHERE job_id = ?", (r["job_id"],)
+        )
+    return len(rows)
 
 
 def away(
