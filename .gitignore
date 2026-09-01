@@ -4,3 +4,12 @@ runs/
 *.db
 *.sqlite
 .env
+
+# Local runtime state — never commit.
+# browser_data is a real Chrome profile holding cookies and logged-in sessions
+# for job sites; autoapply.db holds application history.
+.autoapply/
+runs/*.log
+runs/*.jsonl
+runs/*.err
+runs/*.out

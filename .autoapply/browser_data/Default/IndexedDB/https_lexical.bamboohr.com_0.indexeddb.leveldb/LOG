@@ -1,6 +1,0 @@
-2026/08/05-17:33:57.990 16be4a Creating DB /Users/mohsinkhawaja/autoapply/.autoapply/browser_data/Default/IndexedDB/https_lexical.bamboohr.com_0.indexeddb.leveldb since it was missing.
-2026/08/05-17:33:57.992 16be4a Reusing MANIFEST /Users/mohsinkhawaja/autoapply/.autoapply/browser_data/Default/IndexedDB/https_lexical.bamboohr.com_0.indexeddb.leveldb/MANIFEST-000001
-2026/08/05-17:34:05.499 16be4b Level-0 table #5: started
-2026/08/05-17:34:05.503 16be4b Level-0 table #5: 929 bytes OK
-2026/08/05-17:34:05.511 16be4b Delete type=0 #3
-2026/08/05-17:34:05.512 16be4b Manual compaction at level-0 from (begin) .. (end); will stop at (end)
