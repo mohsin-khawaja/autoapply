@@ -58,6 +58,7 @@ def make_client(settings: Settings, *, timeout: float | None = None) -> ChatClie
     client = AnthropicClient(
         model=settings.anthropic_model,
         timeout=timeout if timeout is not None else 60.0,
+        workspace_id=settings.anthropic_workspace_id,
     )
     ok, msg = client.health()
     if ok:

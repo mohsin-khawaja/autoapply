@@ -42,13 +42,18 @@ class AnthropicClient:
     timeout: float = 60.0
     max_tokens: int = _MAX_TOKENS
     effort: str = "low"
+    #: Required for identity-linked keys; ignored when empty.
+    workspace_id: str = ""
     _client: anthropic.Anthropic | None = field(default=None, repr=False)
 
     def _api(self) -> anthropic.Anthropic:
         if self._client is None:
             # Zero-arg constructor resolves ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN,
             # or an `ant auth login` profile — never hardcode a key here.
-            self._client = anthropic.Anthropic(timeout=self.timeout)
+            headers = (
+                {"anthropic-workspace-id": self.workspace_id} if self.workspace_id else None
+            )
+            self._client = anthropic.Anthropic(timeout=self.timeout, default_headers=headers)
         return self._client
 
     # ---- parity surface with OllamaClient ---------------------------------
@@ -68,6 +73,14 @@ class AnthropicClient:
             return False, f"Model {self.model!r} is not available to this account."
         except anthropic.APIConnectionError as e:
             return False, f"Cannot reach the Anthropic API ({e})."
+        except anthropic.BadRequestError as e:
+            if "anthropic-workspace-id" in str(e):
+                return False, (
+                    "This is an identity-linked API key — it needs a workspace id. "
+                    "Add ANTHROPIC_WORKSPACE_ID=wrkspc_... to .env "
+                    "(Console -> Settings -> Workspaces)."
+                )
+            return False, f"Anthropic API error 400: {e.message}"
         except anthropic.APIStatusError as e:
             return False, f"Anthropic API error {e.status_code}: {e.message}"
         return True, f"Anthropic OK ({self.model})"

@@ -37,6 +37,9 @@ class Settings:
     # $1/$5 per MTok against Opus at $5/$25. Override with
     # AUTOAPPLY_ANTHROPIC_MODEL=claude-sonnet-5 for longer written answers.
     anthropic_model: str = "claude-haiku-4-5"
+    #: Identity-linked API keys must name the workspace they act in; the API
+    #: rejects the request with a 400 otherwise. Console -> Settings -> Workspaces.
+    anthropic_workspace_id: str = ""
 
     # Ollama
     ollama_host: str = "http://localhost:11434"
@@ -141,6 +144,8 @@ def load_settings() -> Settings:
         s.llm_provider = provider.strip().lower()
     if model := os.environ.get("AUTOAPPLY_ANTHROPIC_MODEL"):
         s.anthropic_model = model.strip()
+    if ws := os.environ.get("ANTHROPIC_WORKSPACE_ID"):
+        s.anthropic_workspace_id = ws.strip()
     if allow := os.environ.get("AUTOAPPLY_AUTO_SUBMIT"):
         # comma-separated ATS kinds, e.g. "greenhouse,lever" (SPEC §10 allowlist)
         s.auto_submit_allowlist = {
