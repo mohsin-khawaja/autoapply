@@ -103,7 +103,7 @@ def test_default_provider_is_anthropic():
     """Configured default. The concrete client depends on health — see fallback tests."""
     s = Settings()
     assert s.llm_provider == "anthropic"
-    assert s.anthropic_model == "claude-opus-5"
+    assert s.anthropic_model == "claude-haiku-4-5"
 
 
 def test_ollama_is_still_selectable():
@@ -145,3 +145,36 @@ def test_both_down_reports_the_configured_provider(monkeypatch):
     monkeypatch.setattr(AnthropicClient, "health", lambda self: (False, "rejected"))
     monkeypatch.setattr(OllamaClient, "health", lambda self: (False, "not running"))
     assert isinstance(make_client(Settings()), AnthropicClient)
+
+
+def test_dotenv_is_loaded_but_never_overrides_a_real_env_var(tmp_path, monkeypatch):
+    """launchd inherits almost no environment, so .env is how a scheduled run
+    sees the key. An explicit export must still win."""
+    import os
+
+    from autoapply import config
+
+    env = tmp_path / ".env"
+    env.write_text(
+        "# comment\n"
+        "ANTHROPIC_API_KEY=from-file\n"
+        'export AUTOAPPLY_ANTHROPIC_MODEL="claude-haiku-4-5"\n'
+        "AUTOAPPLY_LLM=anthropic\n"
+        "malformed line with no equals\n"
+    )
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("AUTOAPPLY_LLM", "ollama")  # already set => file must not win
+    config._load_dotenv(env)
+    assert os.environ["ANTHROPIC_API_KEY"] == "from-file"
+    assert os.environ["AUTOAPPLY_ANTHROPIC_MODEL"] == "claude-haiku-4-5"  # quotes stripped
+    assert os.environ["AUTOAPPLY_LLM"] == "ollama"
+
+
+def test_missing_dotenv_is_not_an_error(tmp_path):
+    from autoapply import config
+
+    config._load_dotenv(tmp_path / "nope.env")  # must not raise
+
+
+def test_default_model_is_the_cost_efficient_one():
+    assert Settings().anthropic_model == "claude-haiku-4-5"

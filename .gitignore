@@ -13,3 +13,10 @@ runs/*.log
 runs/*.jsonl
 runs/*.err
 runs/*.out
+
+# Secrets — never commit.
+.env
+
+# Python bytecode
+__pycache__/
+*.pyc

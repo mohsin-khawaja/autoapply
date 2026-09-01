@@ -32,7 +32,11 @@ class Settings:
 
     # LLM provider: "anthropic" (API, better answers) or "ollama" (local, free).
     llm_provider: str = "anthropic"
-    anthropic_model: str = "claude-opus-5"
+    # Form answers are two or three sentences and constrained-option picks are
+    # classification, so the cheapest current model is the right tool: Haiku is
+    # $1/$5 per MTok against Opus at $5/$25. Override with
+    # AUTOAPPLY_ANTHROPIC_MODEL=claude-sonnet-5 for longer written answers.
+    anthropic_model: str = "claude-haiku-4-5"
 
     # Ollama
     ollama_host: str = "http://localhost:11434"
@@ -92,13 +96,40 @@ class Settings:
             d.mkdir(parents=True, exist_ok=True)
 
 
+
+def _load_dotenv(path: Path) -> None:
+    """Load KEY=VALUE lines from ``.env`` into os.environ if not already set.
+
+    Secrets live here rather than in the repo or a shell profile, so an
+    unattended run started by launchd (which inherits almost no environment)
+    still sees them. A real environment variable always wins, so an explicit
+    export can override the file.
+    """
+    if not path.exists():
+        return
+    try:
+        lines = path.read_text().splitlines()
+    except OSError:
+        return
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip().removeprefix("export ").strip()
+        value = value.strip().strip("'\"")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
 def _home() -> Path:
     env = os.environ.get("AUTOAPPLY_HOME")
     return Path(env).expanduser().resolve() if env else (REPO_ROOT / ".autoapply")
 
 
 def load_settings() -> Settings:
-    """Build settings from defaults + environment. Cheap; call freely."""
+    """Build settings from defaults + .env + environment. Cheap; call freely."""
+    _load_dotenv(REPO_ROOT / ".env")
     s = Settings()
     if model := os.environ.get("AUTOAPPLY_MODEL"):
         s.ollama_model = model
