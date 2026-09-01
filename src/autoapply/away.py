@@ -27,6 +27,10 @@ from autoapply.config import Settings
 
 console = Console()
 
+#: A failed, no-op cycle retries on this shorter delay instead of the full
+#: interval — a transient browser-profile lock cost 45 idle minutes.
+_ERROR_RETRY_SECONDS = 120.0
+
 
 @dataclass(slots=True)
 class CycleResult:
@@ -170,12 +174,17 @@ def away(
         result = run_cycle(
             settings, cycle=cycle, batch=batch, min_score=min_score, auto_submit=auto_submit
         )
-        wake = dt.datetime.now() + dt.timedelta(seconds=interval_seconds)
+        # A cycle that errored without applying anything (a locked browser
+        # profile, a dead board) must not cost a whole interval of idleness.
+        delay = interval_seconds
+        if result.error and result.applied == 0:
+            delay = min(_ERROR_RETRY_SECONDS, interval_seconds)
+        wake = dt.datetime.now() + dt.timedelta(seconds=delay)
         console.print(f"[bold cyan]{result.line(wake.strftime('%H:%M'))}[/]")
         if max_cycles is not None and cycle >= max_cycles:
             break
         try:
-            time.sleep(interval_seconds)
+            time.sleep(delay)
         except KeyboardInterrupt:
             break
     elapsed = dt.datetime.now() - started

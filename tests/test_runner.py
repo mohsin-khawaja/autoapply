@@ -517,3 +517,67 @@ def test_cycle_summary_line_is_one_line():
                        submitted=2, needs_input=5, manual=2).line("15:17")
     assert "\n" not in line
     assert "cycle 3" in line and "2 submitted" in line and "next wake 15:17" in line
+
+
+def test_stale_profile_lock_is_released(tmp_path, monkeypatch):
+    """An orphaned Chrome held the profile and every away cycle failed to launch."""
+    import os
+
+    from autoapply.browser import release_profile_lock
+
+    profile = tmp_path / "browser_data"
+    profile.mkdir()
+    (profile / "SingletonLock").symlink_to(f"some-host-{os.getpid()}")
+    (profile / "SingletonCookie").symlink_to("123")
+
+    killed = []
+    monkeypatch.setattr("autoapply.browser.os.kill", lambda pid, sig: killed.append(pid))
+    monkeypatch.setattr("autoapply.browser.time.sleep", lambda _s: None)
+
+    class _Proc:
+        stdout = f"Chrome --user-data-dir={profile} --foo"
+
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: _Proc())
+
+    assert release_profile_lock(profile) is True
+    assert killed == [os.getpid()], "must terminate the process holding this profile"
+    assert not (profile / "SingletonLock").is_symlink()
+    assert not (profile / "SingletonCookie").is_symlink()
+
+
+def test_lock_release_ignores_a_process_using_another_profile(tmp_path, monkeypatch):
+    """Never kill the user's own Chrome — only a process on THIS profile dir."""
+
+    from autoapply.browser import release_profile_lock
+
+    profile = tmp_path / "browser_data"
+    profile.mkdir()
+    (profile / "SingletonLock").symlink_to("some-host-424242")
+
+    killed = []
+    monkeypatch.setattr("autoapply.browser.os.kill", lambda pid, sig: killed.append(pid))
+    monkeypatch.setattr("autoapply.browser.time.sleep", lambda _s: None)
+
+    class _Proc:
+        stdout = "Google Chrome --user-data-dir=/Users/someone/Library/Chrome"
+
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: _Proc())
+    release_profile_lock(profile)
+    assert killed == [], "must not kill a process using a different profile"
+
+
+def test_failed_cycle_retries_sooner_than_the_full_interval(monkeypatch, tmp_path):
+    """A locked browser cost 45 idle minutes; a no-op failure must retry fast."""
+    from autoapply import away as away_mod
+    from autoapply.config import Settings
+
+    slept = []
+    monkeypatch.setattr(away_mod.time, "sleep", slept.append)
+    monkeypatch.setattr(
+        away_mod, "run_cycle",
+        lambda s, *, cycle, batch, min_score, auto_submit: away_mod.CycleResult(
+            cycle=cycle, error="apply: existing browser session"
+        ),
+    )
+    away_mod.away(Settings(home=tmp_path), interval_seconds=2700, max_cycles=2)
+    assert slept and slept[0] <= 120, slept

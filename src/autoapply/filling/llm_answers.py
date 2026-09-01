@@ -126,8 +126,11 @@ def choose_option(
     client: ChatClient,
     *,
     temperature: float = 0.0,
+    best_guess: bool = True,
 ) -> str | None:
     """Pick the best option for a constrained question, or None if genuinely unknown.
+
+    ``best_guess`` retries once, forcing a choice, when the model declines.
 
     Returns an option string only when the model's reply matches one of
     ``options`` (case-insensitive, whitespace-normalized). A reply of UNKNOWN,
@@ -150,6 +153,27 @@ def choose_option(
         ],
         temperature=temperature,
     ).strip()
+    if best_guess and (not reply or reply.upper() == "UNKNOWN"):
+        # An unanswered option leaves the field unresolved, which shuts the
+        # submit gate on an otherwise complete application. Verifiable
+        # credentials never reach here (the mapper blocks them), so what is
+        # left are preference and logistics questions where the closest
+        # reasonable choice beats abandoning the application.
+        reply = client.chat(
+            [
+                {"role": "system", "content": _OPTION_SYSTEM_PROMPT},
+                {"role": "user", "content": user},
+                {
+                    "role": "user",
+                    "content": (
+                        "You must choose. Reply with the exact text of whichever "
+                        "option is most consistent with the profile above. Never "
+                        "reply UNKNOWN."
+                    ),
+                },
+            ],
+            temperature=temperature,
+        ).strip()
     if not reply or reply.upper() == "UNKNOWN":
         return None
     norm = " ".join(reply.lower().split())
