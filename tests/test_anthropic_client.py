@@ -100,9 +100,10 @@ def test_api_errors_become_anthropic_error():
 
 
 def test_default_provider_is_anthropic():
-    client = make_client(Settings())
-    assert isinstance(client, AnthropicClient)
-    assert client.model == "claude-opus-5"
+    """Configured default. The concrete client depends on health — see fallback tests."""
+    s = Settings()
+    assert s.llm_provider == "anthropic"
+    assert s.anthropic_model == "claude-opus-5"
 
 
 def test_ollama_is_still_selectable():
@@ -119,3 +120,28 @@ def test_both_clients_satisfy_the_shared_protocol():
 
     assert isinstance(AnthropicClient(), ChatClient)
     assert isinstance(OllamaClient(), ChatClient)
+
+
+def test_a_rejected_key_falls_back_to_ollama_instead_of_failing_the_run(monkeypatch):
+    """A 401 must not fail every field of every application for a whole batch."""
+    from autoapply.ollama import OllamaClient
+
+    monkeypatch.setattr(
+        AnthropicClient, "health", lambda self: (False, "credentials rejected")
+    )
+    monkeypatch.setattr(OllamaClient, "health", lambda self: (True, "Ollama OK"))
+    assert isinstance(make_client(Settings()), OllamaClient)
+
+
+def test_a_working_key_is_used(monkeypatch):
+    monkeypatch.setattr(AnthropicClient, "health", lambda self: (True, "OK"))
+    assert isinstance(make_client(Settings()), AnthropicClient)
+
+
+def test_both_down_reports_the_configured_provider(monkeypatch):
+    """The error should name Anthropic, not confusingly blame Ollama."""
+    from autoapply.ollama import OllamaClient
+
+    monkeypatch.setattr(AnthropicClient, "health", lambda self: (False, "rejected"))
+    monkeypatch.setattr(OllamaClient, "health", lambda self: (False, "not running"))
+    assert isinstance(make_client(Settings()), AnthropicClient)

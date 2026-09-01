@@ -1,13 +1,6 @@
-2026/08/20-19:43:20.329 925d Reusing MANIFEST /Users/mohsinkhawaja/autoapply/.autoapply/browser_data/Default/IndexedDB/https_player.vimeo.com_0.indexeddb.leveldb/MANIFEST-000001
-2026/08/20-19:43:20.329 925d Recovering log #11
-2026/08/20-19:43:20.330 925d Reusing old log /Users/mohsinkhawaja/autoapply/.autoapply/browser_data/Default/IndexedDB/https_player.vimeo.com_0.indexeddb.leveldb/000011.log 
-2026/08/20-19:43:20.361 9269 Level-0 table #15: started
-2026/08/20-19:43:20.362 9269 Level-0 table #15: 3656 bytes OK
-2026/08/20-19:43:20.363 9269 Delete type=0 #11
-2026/08/20-19:43:20.363 925d Manual compaction at level-0 from '\x00\x07\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x08\x00\x00\x00' @ 0 : 0; will stop at '\x00\x07\x00\x00\x05' @ 240 : 1
-2026/08/20-19:43:20.363 925d Compacting 1@0 + 1@1 files
-2026/08/20-19:43:20.364 925d Generated table #16@0: 26 keys, 1547 bytes
-2026/08/20-19:43:20.364 925d Compacted 1@0 + 1@1 files => 1547 bytes
-2026/08/20-19:43:20.365 925d compacted to: files[ 0 1 1 0 0 0 0 ]
-2026/08/20-19:43:20.365 925d Delete type=2 #15
-2026/08/20-19:43:20.366 925d Manual compaction at level-0 from '\x00\x07\x00\x00\x05' @ 240 : 1 .. '\x00\x08\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/08/30-12:53:10.257 69953 Reusing MANIFEST /Users/mohsinkhawaja/autoapply/.autoapply/browser_data/Default/IndexedDB/https_player.vimeo.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/08/30-12:53:10.257 69953 Recovering log #28
+2026/08/30-12:53:10.257 69953 Reusing old log /Users/mohsinkhawaja/autoapply/.autoapply/browser_data/Default/IndexedDB/https_player.vimeo.com_0.indexeddb.leveldb/000028.log 
+2026/08/30-12:53:10.257 69953 Delete type=2 #27
+2026/08/30-12:53:10.272 6995e Manual compaction at level-0 from '\x00\x0e\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x0f\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/08/30-12:53:10.275 6995e Manual compaction at level-0 from '\x00\x0f\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x10\x00\x00\x00' @ 0 : 0; will stop at (end)

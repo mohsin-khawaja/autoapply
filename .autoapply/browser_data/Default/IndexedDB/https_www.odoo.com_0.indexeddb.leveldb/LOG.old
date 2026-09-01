@@ -1,2 +1,18 @@
-2026/08/04-00:47:20.743 60ff8f Creating DB /Users/mohsinkhawaja/autoapply/.autoapply/browser_data/Default/IndexedDB/https_www.odoo.com_0.indexeddb.leveldb since it was missing.
-2026/08/04-00:47:20.745 60ff8f Reusing MANIFEST /Users/mohsinkhawaja/autoapply/.autoapply/browser_data/Default/IndexedDB/https_www.odoo.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/08/04-17:31:37.670 25ce4 Reusing MANIFEST /Users/mohsinkhawaja/autoapply/.autoapply/browser_data/Default/IndexedDB/https_www.odoo.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/08/04-17:31:37.670 25ce4 Recovering log #3
+2026/08/04-17:31:37.670 25ce4 Reusing old log /Users/mohsinkhawaja/autoapply/.autoapply/browser_data/Default/IndexedDB/https_www.odoo.com_0.indexeddb.leveldb/000003.log 
+2026/08/04-17:31:37.691 25ce7 Level-0 table #5: started
+2026/08/04-17:31:37.699 25ce7 Level-0 table #5: 4852 bytes OK
+2026/08/04-17:31:37.701 25ce7 Delete type=0 #3
+2026/08/04-17:31:37.701 25ce4 Manual compaction at level-0 from '\x00\x02\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x03\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/08/04-17:31:37.938 25ce7 Level-0 table #7: started
+2026/08/04-17:31:37.939 25ce7 Level-0 table #7: 3715 bytes OK
+2026/08/04-17:31:37.940 25ce7 Delete type=0 #4
+2026/08/04-17:31:37.940 25ce4 Manual compaction at level-0 from '\x00\x03\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x04\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/08/04-17:31:37.940 25ce4 Manual compaction at level-1 from '\x00\x03\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x04\x00\x00\x00' @ 0 : 0; will stop at '\x00\x04\x02\x02\x01\x10\x00{\x00"\x00l\x00a\x00n\x00g\x00"\x00:\x00"\x00e\x00n\x00_\x00U\x00S\x00"\x00}' @ 329 : 1
+2026/08/04-17:31:37.940 25ce4 Compacting 1@1 + 1@2 files
+2026/08/04-17:31:37.941 25ce4 Generated table #8@1: 49 keys, 2363 bytes
+2026/08/04-17:31:37.941 25ce4 Compacted 1@1 + 1@2 files => 2363 bytes
+2026/08/04-17:31:37.942 25ce4 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/08/04-17:31:37.942 25ce4 Delete type=2 #7
+2026/08/04-17:31:37.942 25ce4 Manual compaction at level-1 from '\x00\x04\x02\x02\x01\x10\x00{\x00"\x00l\x00a\x00n\x00g\x00"\x00:\x00"\x00e\x00n\x00_\x00U\x00S\x00"\x00}' @ 329 : 1 .. '\x00\x04\x00\x00\x00' @ 0 : 0; will stop at (end)
