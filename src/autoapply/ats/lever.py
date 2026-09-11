@@ -136,14 +136,22 @@ class LeverAdapter(base.BaseAdapter):
                 if fp.value is None:
                     continue
                 value = fp.value if isinstance(fp.value, str) else str(fp.value)
-                if f.field_type == "select":
-                    page.select_option(f.selector, label=value)
-                elif f.field_type == "radio":
-                    page.check(f'{f.selector}[value="{value}"]')
-                elif f.field_type == "checkbox":
-                    page.check(f.selector)
-                else:
-                    page.fill(f.selector, value)
+                # Per-field isolation: a stuck widget flags that one field and
+                # the application still lands in the manual queue, rather than
+                # the whole job being recorded failed and lost.
+                try:
+                    if f.field_type == "select":
+                        page.select_option(f.selector, label=value)
+                    elif f.field_type == "radio":
+                        page.check(f'{f.selector}[value="{value}"]')
+                    elif f.field_type == "checkbox":
+                        page.check(f.selector)
+                    else:
+                        page.fill(f.selector, value)
+                except Exception:  # noqa: BLE001 - flag and keep filling
+                    needs.append(f.label or f.key)
+                    _flag_quiet(page, f.selector)
+                    continue
                 filled += 1
         except Exception as exc:  # noqa: BLE001 - report, never crash the run
             return base.FillResult(status="failed", filled_count=filled, error=str(exc))

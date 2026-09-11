@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mohsin.autoapply.discovery</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/mohsinkhawaja/autoapply/scripts/discover.sh</string>
+    </array>
+
+    <!-- Every 6 hours. Unlike StartCalendarInterval, launchd runs a missed
+         StartInterval job once the machine wakes, so a closed lid delays
+         discovery instead of losing the slot entirely. -->
+    <key>StartInterval</key>
+    <integer>21600</integer>
+
+    <!-- Catch up after a boot. The command's own min-interval guard makes this
+         a no-op when a run already succeeded recently, so rebooting twice in a
+         morning does not double-sync. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Background priority: discovery is never urgent and should not compete
+         with whatever the user is doing. -->
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>5</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/mohsinkhawaja/autoapply/runs/discovery.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/mohsinkhawaja/autoapply/runs/discovery.err</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/mohsinkhawaja/autoapply</string>
+</dict>
+</plist>
