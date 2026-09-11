@@ -149,6 +149,14 @@ def _top_up_queue(
            WHERE j.active = 1 AND j.is_visible = 1 AND j.score >= ?
              AND a.job_id IS NULL
              AND j.ats IN (?, ?, ?)
+             -- Boards repost the same req under a new id. A second application
+             -- to the same company + title reads as spam, not persistence.
+             AND NOT EXISTS (
+               SELECT 1 FROM applications s JOIN jobs sj ON sj.id = s.job_id
+               WHERE s.submitted_at IS NOT NULL
+                 AND sj.company_name = j.company_name
+                 AND lower(trim(sj.title)) = lower(trim(j.title))
+             )
            ORDER BY (COALESCE(j.date_posted, 0) >= ?) DESC,
                     CASE j.ats WHEN 'greenhouse' THEN 0 WHEN 'lever' THEN 1 ELSE 2 END,
                     j.date_posted DESC, j.score DESC

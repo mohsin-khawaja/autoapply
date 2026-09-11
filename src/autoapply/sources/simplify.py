@@ -90,6 +90,8 @@ HIGH_TITLES = (
     "ml engineer", "machine learning engineer", "machine learning", "ai engineer",
     "applied ai", "applied ml", "ai solutions", "forward deployed", "solutions engineer",
     "ai/ml", "deep learning", "research engineer",
+    "gtm engineer", "go-to-market engineer", "go to market engineer",
+    "business intelligence engineer", "bi engineer", "business intelligence",
 )
 MEDIUM_TITLES = (
     "software engineer", "swe", "backend engineer", "back end engineer", "full stack",

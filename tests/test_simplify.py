@@ -97,3 +97,18 @@ def test_score_inactive_is_zero(feed_listings):
 def test_resolve_redirect_noop_for_direct_url():
     url = "https://jobs.ashbyhq.com/acme/abc"
     assert simplify.resolve_redirect(url) == url
+
+
+def test_gtm_and_bi_engineer_are_target_titles():
+    def score(title):
+        return simplify.heuristic_score(simplify.Listing(
+            id="x", company_name="A", title=title, url="https://x",
+            locations=["San Francisco, CA"], sponsorship="", category="eng",
+            active=True, is_visible=True, date_posted=None,
+        ))
+    titles = (
+        "GTM Engineer", "Go-To-Market Engineer",
+        "Business Intelligence Engineer", "BI Engineer",
+    )
+    for t in titles:
+        assert score(t) >= 70, t

@@ -621,3 +621,21 @@ def test_away_never_queues_generic_dead_ends(conn):
     away_mod._top_up_queue(conn, Settings(), batch=10, min_score=0)
     row = conn.execute("SELECT status FROM applications WHERE job_id='gen1'").fetchone()
     assert row is None, "a generic posting must never be queued"
+
+
+def test_away_never_reapplies_to_a_submitted_company_title(conn):
+    """Boards repost a req under a new id; a second application reads as spam."""
+    from autoapply import away as away_mod
+    from autoapply.config import Settings
+
+    now = datetime.now(UTC).isoformat()
+    for jid in ("rep1", "rep2"):
+        db.upsert_job(
+            conn, id=jid, company_name="Voyager", title="ML Engineer - Associate",
+            url=f"https://boards.greenhouse.io/v/{jid}", now_iso=now, ats="greenhouse", score=80,
+        )
+    db.record_application(conn, job_id="rep1", status="submitted")
+    conn.execute("UPDATE applications SET submitted_at=? WHERE job_id='rep1'", (now,))
+    conn.commit()
+    away_mod._top_up_queue(conn, Settings(), batch=10, min_score=0)
+    assert conn.execute("SELECT status FROM applications WHERE job_id='rep2'").fetchone() is None
