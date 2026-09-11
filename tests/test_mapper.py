@@ -43,7 +43,7 @@ def test_maps_basic_identity_fields():
     plan = _plan(fields)
     by_key = {fp.field.key: fp for fp in plan.fields}
     assert by_key["f1"].value == "Mohsin"
-    assert by_key["f2"].value == "mkhawaja@ucsd.edu"
+    assert by_key["f2"].value == "mohsinkhawaja10@gmail.com"
     assert by_key["f3"].value == "510-949-7141"
     assert not plan.unresolved
 
@@ -274,7 +274,7 @@ def test_mapped_checkbox_is_still_filled_from_profile():
 
 def test_bare_location_maps_to_city():
     fp = _plan([FormField(key="l", field_type="text", label="Location", selector="#l")]).fields[0]
-    assert fp.value == "Berkeley"
+    assert fp.value == "Hercules"
     assert not fp.needs_input
 
 

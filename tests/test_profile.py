@@ -14,7 +14,7 @@ def test_profile_yaml_loads():
     p = load_profile(REPO / "profile.yaml")
     assert p.identity.first_name == "Mohsin"
     assert p.identity.last_name == "Khawaja"
-    assert p.identity.email == "mkhawaja@ucsd.edu"
+    assert p.identity.email == "mohsinkhawaja10@gmail.com"
     assert len(p.experience) == 4
     assert p.answers.work_authorization_us == "Yes"
     assert p.answers.require_sponsorship == "No"

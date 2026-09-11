@@ -31,6 +31,9 @@ console = Console()
 #: interval — a transient browser-profile lock cost 45 idle minutes.
 _ERROR_RETRY_SECONDS = 120.0
 
+#: Postings newer than this are worked before older ones.
+_FRESH_DAYS = 14
+
 
 @dataclass(slots=True)
 class CycleResult:
@@ -137,16 +140,20 @@ def _top_up_queue(
     # careers pages with no inline form: 1,359 attempts, 1,359 "no form found",
     # zero submissions — queueing them spends the batch on guaranteed dead ends.
     fillable = ("greenhouse", "lever", "ashby")
+    # Fresh postings first: a req posted this week is still accepting; one
+    # from two months ago is often filled but not yet delisted.
+    fresh_cutoff = time.time() - _FRESH_DAYS * 86400
     rows = conn.execute(
         """SELECT j.id FROM jobs j
            LEFT JOIN applications a ON a.job_id = j.id
            WHERE j.active = 1 AND j.is_visible = 1 AND j.score >= ?
              AND a.job_id IS NULL
              AND j.ats IN (?, ?, ?)
-           ORDER BY CASE j.ats WHEN 'greenhouse' THEN 0 WHEN 'lever' THEN 1 ELSE 2 END,
-                    j.score DESC, j.date_posted DESC
+           ORDER BY (COALESCE(j.date_posted, 0) >= ?) DESC,
+                    CASE j.ats WHEN 'greenhouse' THEN 0 WHEN 'lever' THEN 1 ELSE 2 END,
+                    j.date_posted DESC, j.score DESC
            LIMIT ?""",
-        (min_score, *fillable, batch),
+        (min_score, *fillable, fresh_cutoff, batch),
     ).fetchall()
     added = enqueue(conn, [r["id"] for r in rows])
     if added >= batch:
