@@ -53,24 +53,35 @@ class QueuedJob:
         return self.job_id
 
 
+#: Postings newer than this are worked before older ones, regardless of score.
+_FRESH_DAYS = 14
+
+
 def queued_jobs(conn: sqlite3.Connection, limit: int) -> list[QueuedJob]:
-    """Queued applications, highest-scored job first."""
+    """Queued applications: fresh postings first, then fillable ATSs, then score.
+
+    A req posted this week is still accepting; one from two months ago is
+    often filled but not yet delisted. With a 500-deep queue, ordering by
+    score alone left this week's postings unreached for days.
+    """
+    fresh_cutoff = time.time() - _FRESH_DAYS * 86400
     rows = conn.execute(
         """SELECT a.job_id, j.company_name, j.title,
                   COALESCE(j.final_url, j.url) AS url, j.ats
            FROM applications a JOIN jobs j ON j.id = a.job_id
            WHERE a.status = 'queued'
-           -- Work the ATSs that can actually complete an application first.
-           -- A high-scoring 'generic' posting is usually a careers page with no
-           -- inline form, so scoring alone sends the batch to dead ends.
-           ORDER BY CASE j.ats
+           ORDER BY (COALESCE(j.date_posted, 0) >= ?) DESC,
+                    -- Work the ATSs that can actually complete an application
+                    -- first; a 'generic' posting is usually a careers page
+                    -- with no inline form.
+                    CASE j.ats
                       WHEN 'greenhouse' THEN 0
                       WHEN 'lever'      THEN 1
                       WHEN 'ashby'      THEN 2
                       ELSE 3
                     END,
-                    j.score DESC, j.date_posted DESC LIMIT ?""",
-        (limit,),
+                    j.date_posted DESC, j.score DESC LIMIT ?""",
+        (fresh_cutoff, limit),
     ).fetchall()
     return [QueuedJob(r["job_id"], r["company_name"], r["title"], r["url"], r["ats"]) for r in rows]
 

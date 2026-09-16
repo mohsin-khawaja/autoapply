@@ -639,3 +639,18 @@ def test_away_never_reapplies_to_a_submitted_company_title(conn):
     conn.commit()
     away_mod._top_up_queue(conn, Settings(), batch=10, min_score=0)
     assert conn.execute("SELECT status FROM applications WHERE job_id='rep2'").fetchone() is None
+
+
+def test_queue_works_fresh_postings_before_older_higher_scored_ones(conn):
+    """A 500-deep queue ordered by score left this week's postings unreached."""
+    import time
+
+    now = datetime.now(UTC).isoformat()
+    db.upsert_job(conn, id="old", company_name="A", title="ML Engineer New Grad",
+                  url="https://boards.greenhouse.io/a", now_iso=now, ats="greenhouse",
+                  score=100, date_posted=int(time.time()) - 60 * 86400)
+    db.upsert_job(conn, id="new", company_name="B", title="Software Engineer",
+                  url="https://boards.greenhouse.io/b", now_iso=now, ats="greenhouse",
+                  score=40, date_posted=int(time.time()) - 2 * 86400)
+    enqueue(conn, ["old", "new"])
+    assert [j.job_id for j in queued_jobs(conn, 10)] == ["new", "old"]
