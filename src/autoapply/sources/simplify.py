@@ -92,10 +92,14 @@ HIGH_TITLES = (
     "ai/ml", "deep learning", "research engineer",
     "gtm engineer", "go-to-market engineer", "go to market engineer",
     "business intelligence engineer", "bi engineer", "business intelligence",
+    "ai analyst", "ai/ml analyst", "ml analyst", "ai operations", "ai solutions analyst",
+    "analytics engineer", "ai product analyst", "ai strategy", "ai program",
 )
 MEDIUM_TITLES = (
     "software engineer", "swe", "backend engineer", "back end engineer", "full stack",
     "data scientist", "data engineer", "new grad", "associate engineer",
+    "data analyst", "product analyst", "solutions analyst", "technical analyst",
+    "sales engineer", "solutions consultant",
 )
 EXCLUDE_TITLE = (
     "senior", "sr.", "sr ", "staff", "principal", "lead ", "manager", "director",

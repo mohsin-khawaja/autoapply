@@ -184,6 +184,14 @@ def choose_option(
     head = reply.split(".")[0].split(")")[0].strip()
     if head.isdigit() and 1 <= int(head) <= len(options):
         return options[int(head) - 1]
+    # Near-miss wording ("Yes, I am" for "Yes"): take a strong fuzzy match
+    # rather than leaving the field unresolved. Below the bar stays None.
+    if best_guess:
+        from rapidfuzz import fuzz, process
+
+        match = process.extractOne(reply, options, scorer=fuzz.WRatio)
+        if match and match[1] >= 85:
+            return match[0]
     return None
 
 
