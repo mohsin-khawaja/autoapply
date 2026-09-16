@@ -107,6 +107,10 @@ EXCLUDE_TITLE = (
     "vp ", "vice president", "president", "chief",
     # Not a step forward from his current full-time role.
     "intern", "internship", "co-op", "coop", "apprentice",
+    # Crowd/gig work that "AI analyst" otherwise matches: language-specific
+    # data labeling and rating, not analysis.
+    "data labeling", "labeling", "labelling", "annotation", "annotator",
+    "transcription", "speaker", "rater", "linguist", "crowd",
 )
 
 #: Explicit new-grad / entry-level markers. These are what he can actually land,

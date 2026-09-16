@@ -112,3 +112,18 @@ def test_gtm_and_bi_engineer_are_target_titles():
     )
     for t in titles:
         assert score(t) >= 70, t
+
+
+def test_data_labeling_gigs_are_excluded():
+    def score(title):
+        return simplify.heuristic_score(simplify.Listing(
+            id="x", company_name="A", title=title, url="https://x",
+            locations=["Remote"], sponsorship="", category="eng",
+            active=True, is_visible=True, date_posted=None,
+        ))
+    for t in (
+        "Data Labeling Analyst - Speech & Voice AI - Swedish Speaker",
+        "AI Data Annotator", "Search Quality Rater",
+    ):
+        assert score(t) == 0, t
+    assert score("AI Analyst") >= 70

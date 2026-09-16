@@ -153,7 +153,7 @@ def _top_up_queue(
              -- to the same company + title reads as spam, not persistence.
              AND NOT EXISTS (
                SELECT 1 FROM applications s JOIN jobs sj ON sj.id = s.job_id
-               WHERE s.submitted_at IS NOT NULL
+               WHERE (s.submitted_at IS NOT NULL OR s.status = 'queued')
                  AND sj.company_name = j.company_name
                  AND lower(trim(sj.title)) = lower(trim(j.title))
              )
