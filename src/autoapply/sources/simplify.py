@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -89,12 +90,42 @@ HIGH_TITLES = (
     "ml engineer", "machine learning engineer", "machine learning", "ai engineer",
     "applied ai", "applied ml", "ai solutions", "forward deployed", "solutions engineer",
     "ai/ml", "deep learning", "research engineer",
+    "gtm engineer", "go-to-market engineer", "go to market engineer",
+    "business intelligence engineer", "bi engineer", "business intelligence",
+    "ai analyst", "ai/ml analyst", "ml analyst", "ai operations", "ai solutions analyst",
+    "analytics engineer", "ai product analyst", "ai strategy", "ai program",
 )
 MEDIUM_TITLES = (
     "software engineer", "swe", "backend engineer", "back end engineer", "full stack",
     "data scientist", "data engineer", "new grad", "associate engineer",
+    "data analyst", "product analyst", "solutions analyst", "technical analyst",
+    "sales engineer", "solutions consultant",
 )
-EXCLUDE_TITLE = ("senior", "staff", "principal", "lead ", "manager", "director", "iii", " iv")
+EXCLUDE_TITLE = (
+    "senior", "sr.", "sr ", "staff", "principal", "lead ", "manager", "director",
+    "iii", " iv", " ii", "head of", "architect", "distinguished", "fellow",
+    "vp ", "vice president", "president", "chief",
+    # Not a step forward from his current full-time role.
+    "intern", "internship", "co-op", "coop", "apprentice",
+    # Crowd/gig work that "AI analyst" otherwise matches: language-specific
+    # data labeling and rating, not analysis.
+    "data labeling", "labeling", "labelling", "annotation", "annotator",
+    "transcription", "speaker", "rater", "linguist", "crowd",
+)
+
+#: Explicit new-grad / entry-level markers. These are what he can actually land,
+#: so they outrank a generically-relevant mid-level title.
+NEW_GRAD_TITLES = (
+    "new grad", "new graduate", "newgrad", "entry level", "entry-level",
+    "early career", "early-career", "university grad", "university graduate",
+    "college grad", "campus", "recent grad", "grad program", "rotational",
+    "associate", "junior", "jr.", "engineer i", "engineer 1", "level 1",
+    "2026 grad", "2025 grad", "class of 2026", "class of 2025",
+)
+
+#: Experience demands that put a posting out of reach for a ~1-year-experience
+#: applicant. Matched against title text only (the feed carries no description).
+_SENIOR_YEARS = re.compile(r"\b([3-9]|1\d)\+?\s*(?:\+|years|yrs)", re.I)
 
 HIGH_LOCATIONS = (
     "san francisco", "sf", "bay area", "san jose", "berkeley", "palo alto", "mountain view",
@@ -160,6 +191,9 @@ def heuristic_score(listing: Listing) -> int:
     if any(h in title for h in CLEARANCE_HINTS) or any(h in loc_text for h in CLEARANCE_HINTS):
         return 0
 
+    if _SENIOR_YEARS.search(title):
+        return 0
+
     score = 0
 
     # Title tier (dominant signal).
@@ -169,6 +203,13 @@ def heuristic_score(listing: Listing) -> int:
         score += 35
     else:
         score += 8  # some relevance floor for active new-grad roles
+
+    # Entry-level boost. Domain relevance alone was sending mid-level "ML
+    # Engineer" postings to the top of the queue with the same 90 as a new-grad
+    # req; an explicit early-career marker is the stronger signal about what is
+    # actually winnable, so it gets the largest single bonus.
+    if any(t in title for t in NEW_GRAD_TITLES):
+        score += 30
 
     # Location tier.
     if any(loc in loc_text for loc in HIGH_LOCATIONS) or not loc_text:

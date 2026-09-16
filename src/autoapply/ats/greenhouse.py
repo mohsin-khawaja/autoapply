@@ -94,6 +94,8 @@ _EXTRACT_JS = """
     const tag = el.tagName.toLowerCase();
     const type = (el.getAttribute('type') || '').toLowerCase();
     if (['hidden', 'submit', 'button', 'image', 'reset'].includes(type)) continue;
+    // intl-tel-input internals (phone country search) are widget chrome, not questions
+    if ((el.id || '').startsWith('iti-')) continue;
     if (el.disabled) continue;
 
     const label = labelTextFor(el);
@@ -236,21 +238,23 @@ class GreenhouseAdapter(base.BaseAdapter):
         """Fill planned fields, upload resume, flag needs_input. Never submits."""
         filled = 0
         flagged: list[str] = []
-        try:
-            for fp in plan.fields:
-                if fp.needs_input or fp.source == "unmapped":
-                    self._flag(page, fp)
-                    flagged.append(fp.field.label or fp.field.key)
-                    continue
+        # File uploads last: greenhouse's autofill-from-resume re-renders the
+        # form after upload and clobbers fields mid-type if filled after it.
+        ordered = [fp for fp in plan.fields if fp.field.field_type != "file"]
+        ordered += [fp for fp in plan.fields if fp.field.field_type == "file"]
+        for fp in ordered:
+            if fp.needs_input or fp.source == "unmapped":
+                self._flag(page, fp)
+                flagged.append(fp.field.label or fp.field.key)
+                continue
+            try:
                 if self._fill_one(page, fp, plan):
                     filled += 1
-        except Exception as exc:  # noqa: BLE001 - report, don't crash the run
-            return FillResult(
-                status="failed",
-                filled_count=filled,
-                needs_input_labels=flagged,
-                error=f"{type(exc).__name__}: {exc}",
-            )
+            except Exception as exc:  # noqa: BLE001 - flag this field, keep filling the rest
+                fp.needs_input = True
+                fp.note = f"fill error: {type(exc).__name__}"
+                self._flag(page, fp)
+                flagged.append(fp.field.label or fp.field.key)
 
         required_unresolved = [
             fp.field.label or fp.field.key
@@ -282,6 +286,13 @@ class GreenhouseAdapter(base.BaseAdapter):
             if path is None:
                 return False
             page.set_input_files(field.selector, str(path))
+            # Resume upload triggers autofill-from-resume: the form re-renders
+            # while later fields are being typed into. Let it settle first.
+            try:
+                page.wait_for_load_state("networkidle", timeout=10_000)
+            except Exception:  # noqa: BLE001 - busy pages never go idle
+                pass
+            page.wait_for_timeout(1_500)
             return True
 
         if fp.value is None:
@@ -313,15 +324,50 @@ class GreenhouseAdapter(base.BaseAdapter):
         return True
 
     def _fill_combobox(self, page: Page, selector: str, value: str) -> bool:
-        """React-select style: click, type, pick the matching option."""
+        """Open the listbox; pick directly when options are static, else type-ahead.
+
+        Yes/No style comboboxes show their options on click and don't filter as
+        you type (typing can even close them), so try click-and-pick before any
+        typing. Lists also disagree on canonical spellings ("UC San Diego" /
+        "University of California, San Diego"), so every VALUE_ALIASES variant
+        is tried before giving up. Never pick an option the typed text didn't
+        select — a wrong School is worse than a flagged one.
+        """
+        from autoapply.filling.synonyms import VALUE_ALIASES
+
         loc = page.locator(selector)
         loc.click()
-        loc.fill("")
-        loc.type(value, delay=10)
-        option = page.locator('[role="option"]', has_text=value).first
-        option.wait_for(state="visible", timeout=5000)
-        option.click()
-        return True
+        # Scope option lookups to THIS combobox's listbox (aria-controls);
+        # other widgets (the phone country list) keep [role=option] nodes
+        # mounted globally and pollute unscoped queries.
+        listbox_id = loc.get_attribute("aria-controls") or loc.get_attribute("aria-owns")
+        scope = page.locator(f"#{listbox_id}") if listbox_id else page
+        exact = scope.get_by_role("option", name=value, exact=True).first
+        try:
+            exact.wait_for(state="visible", timeout=1500)
+            exact.click()
+            return True
+        except Exception:  # noqa: BLE001 - not a static list (or no exact match)
+            pass
+
+        head = value.split(":")[0].strip()
+        candidates = [value, value.replace(",", ""), value.replace(", ", " - "), head]
+        candidates += list(VALUE_ALIASES.get(value.strip().lower(), ()))
+        seen: set[str] = set()
+        for cand in candidates:
+            if cand.lower() in seen:
+                continue
+            seen.add(cand.lower())
+            loc.fill("")
+            loc.type(cand, delay=10)
+            option = scope.locator('[role="option"]', has_text=cand).first
+            try:
+                option.wait_for(state="visible", timeout=3500)
+                option.click()
+                return True
+            except Exception:  # noqa: BLE001 - try the next spelling
+                continue
+        raise TimeoutError(f"no option matched any spelling of {value!r}")
 
     def _check_radio(self, page: Page, field: FormField, value: str) -> None:
         """Check the radio in the group whose label matches ``value``."""

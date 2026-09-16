@@ -313,14 +313,15 @@ def test_fill_job_boards_combobox(browser_page, adapter, tmp_path) -> None:
     assert browser_page.evaluate("window.__submitted") is False
 
 
-def test_fill_failure_reports_failed(browser_page, adapter) -> None:
+def test_fill_error_flags_field_not_whole_job(browser_page, adapter) -> None:
+    """A broken widget flags that field; the rest of the application survives."""
     browser_page.goto(fixture_url("greenhouse_classic.html"))
     bogus = FormField(
         key="ghost",
         field_type="text",
         label="Ghost",
         selector="#does_not_exist",
-        required=False,
+        required=True,
     )
     plan = make_plan([bogus], {"ghost": "boo"})
     browser_page.set_default_timeout(1500)
@@ -328,5 +329,6 @@ def test_fill_failure_reports_failed(browser_page, adapter) -> None:
         result = adapter.fill(browser_page, plan)
     finally:
         browser_page.set_default_timeout(30000)
-    assert result.status == "failed"
-    assert result.error
+    assert result.status == "needs_input"
+    assert "Ghost" in result.needs_input_labels
+    assert browser_page.evaluate("window.__submitted") is False

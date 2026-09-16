@@ -14,11 +14,13 @@ def test_profile_yaml_loads():
     p = load_profile(REPO / "profile.yaml")
     assert p.identity.first_name == "Mohsin"
     assert p.identity.last_name == "Khawaja"
-    assert p.identity.email == "mkhawaja@ucsd.edu"
+    assert p.identity.email == "mohsinkhawaja10@gmail.com"
     assert len(p.experience) == 4
     assert p.answers.work_authorization_us == "Yes"
     assert p.answers.require_sponsorship == "No"
-    assert p.answers.eeo.gender == "decline"
+    assert p.answers.eeo.gender == "Male"
+    assert p.answers.eeo.race == "Asian"
+    assert p.answers.eeo.orientation == "Heterosexual"
 
 
 def test_dates_are_strings():
@@ -32,6 +34,7 @@ def test_resolve_dotted_keys():
     assert resolve_profile_value(p, "identity.first_name") == "Mohsin"
     assert resolve_profile_value(p, "answers.require_sponsorship") == "No"
     assert resolve_profile_value(p, "education.0.school").startswith("University of California")
+    assert resolve_profile_value(p, "identity.links.github").startswith("https://github.com/")
+    assert resolve_profile_value(p, "identity.links.twitter").startswith("https://x.com/")
     # empty optional -> None (never fabricate)
-    assert resolve_profile_value(p, "identity.links.github") is None
     assert resolve_profile_value(p, "education.0.gpa") is None
