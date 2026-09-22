@@ -309,7 +309,9 @@ def _plan_field(
     # 4. Free-text with no profile mapping -> LLM. Cached answer wins; otherwise
     #    the runner generates one. Both single-line and paragraph fields qualify,
     #    so best-effort estimated answers complete the form rather than blocking it.
-    if f.field_type in ("textarea", "text"):
+    # A combobox with no options (still closed, or free-entry) accepts typed
+    # text on Greenhouse, so it is answered like a text field.
+    if f.field_type in ("textarea", "text") or (f.field_type == "combobox" and not f.options):
         qh = question_hash(f.label or f.key)
         cached = answers.get(qh, job.company_name)
         if cached:

@@ -194,6 +194,32 @@ _EXTRACT_JS = """
 """
 
 
+
+def _hydrate_combobox_options(page: Page, fields: list[FormField]) -> None:
+    """Open closed react-select comboboxes to read their options.
+
+    Greenhouse renders a combobox's listbox only while it is open, so the DOM
+    pass sees an empty option list. With no options the mapper could neither
+    match a profile value nor hand the field to the LLM, and every form with a
+    "Yes/No" combobox stalled at needs_input. Each open attempt is bounded and
+    isolated; a widget that will not open is simply left as-is.
+    """
+    for f in fields:
+        if f.field_type != "combobox" or f.options:
+            continue
+        try:
+            loc = page.locator(f.selector).first
+            loc.click(timeout=1_500)
+            page.wait_for_timeout(250)
+            opts = page.locator('[role="option"]').all_text_contents()
+            f.options = [" ".join(o.split()) for o in opts if o and o.strip()]
+            page.keyboard.press("Escape")
+        except Exception:  # noqa: BLE001 - one stuck widget must not fail extraction
+            try:
+                page.keyboard.press("Escape")
+            except Exception:  # noqa: BLE001
+                pass
+
 class GreenhouseAdapter(base.BaseAdapter):
     """Adapter for Greenhouse job boards (classic and React job-boards UI)."""
 
@@ -232,6 +258,7 @@ class GreenhouseAdapter(base.BaseAdapter):
                     attrs=r.get("attrs") or {},
                 )
             )
+        _hydrate_combobox_options(page, fields)
         return fields
 
     def fill(self, page: Page, plan: FillPlan) -> FillResult:

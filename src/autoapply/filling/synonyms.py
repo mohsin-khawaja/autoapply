@@ -51,6 +51,7 @@ SYNONYMS: dict[str, list[str]] = {
         "authorized to work", "work authorization", "legally authorized", "us work authorization",
         "legally eligible to work", "eligible to work", "authorized to work in the united states",
         "authorization to work", "authorised to work",
+        "right to work", "verify right to work", "permitted to work", "allowed to work",
     ],
     "identity.location.country": ["country"],
     "answers.require_sponsorship": [

@@ -353,3 +353,23 @@ def test_veteran_field_end_to_end_is_never_inverted():
     )
     fp = _plan([f]).fields[0]
     assert fp.value != "I am a veteran", "must not claim veteran status"
+
+
+def test_optionless_combobox_is_answered_by_the_llm_not_stranded():
+    """Greenhouse comboboxes read empty when closed; 67/67 apps stalled on them."""
+    f = FormField(
+        key="c", field_type="combobox", label="Who did you meet at the career fair?",
+        selector="#c", required=True,
+    )
+    fp = _plan([f]).fields[0]
+    assert fp.source == "llm", fp.source
+
+
+def test_right_to_work_maps_to_work_authorization():
+    from autoapply.filling.synonyms import match_key
+
+    k = match_key(
+        label="Are you currently based in and can verify right to work from the US?",
+        name="", field_id="", aria="", autocomplete="",
+    )
+    assert k == "answers.work_authorization_us"
