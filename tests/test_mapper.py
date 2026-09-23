@@ -373,3 +373,46 @@ def test_right_to_work_maps_to_work_authorization():
         name="", field_id="", aria="", autocomplete="",
     )
     assert k == "answers.work_authorization_us"
+
+
+def test_core_identity_facts_resolve_across_form_wordings():
+    """Cemented values: these must never fall through to the LLM or needs_input.
+
+    Forms word the same fact a dozen ways ("BS" vs "Bachelor's degree (BA/BS)",
+    "UCSD" vs "Univ. of California, San Diego"). Each is the same fact from
+    profile.yaml, never a new claim.
+    """
+    cases = [
+        ("Degree", ["BS", "MS", "PhD"]),
+        ("Degree", ["B.S", "M.S"]),
+        ("Degree", ["BSc", "MSc"]),
+        ("Degree", ["Bachelor", "Master"]),
+        ("Degree", ["Bachelor's degree (BA/BS)", "Other"]),
+        ("Degree", ["Undergraduate Degree", "Graduate Degree"]),
+        ("Degree", ["Bachelor of Science", "Master of Science"]),
+        ("School", ["UCSD", "MIT"]),
+        ("School", ["UC San Diego", "Stanford"]),
+        ("School", ["UC-San Diego", "Other"]),
+        ("School", ["University of California - San Diego", "Other"]),
+        ("School", ["University of California-San Diego", "Other"]),
+        ("School", ["Univ. of California, San Diego", "Other"]),
+        ("Race", ["Asian or Pacific Islander", "Black", "White"]),
+        ("Race", ["Asian/Pacific Islander", "Black"]),
+        ("Race", ["Asian American", "White"]),
+        ("Race", ["Asian - Not Hispanic or Latino", "Other"]),
+        ("Race", ["Asian (Not Hispanic or Latino)", "White"]),
+    ]
+    for label, options in cases:
+        fp = _plan([
+            FormField(key="k", field_type="select", label=label, selector="#k", options=options)
+        ]).fields[0]
+        assert fp.source == "profile", f"{label} {options} -> {fp.source}"
+        assert fp.value in options, f"{label} {options} -> {fp.value}"
+
+
+def test_city_matches_with_or_without_state_suffix():
+    for options in (["Hercules, CA", "Remote"], ["Hercules, California", "Remote"]):
+        fp = _plan([
+            FormField(key="c", field_type="select", label="City", selector="#c", options=options)
+        ]).fields[0]
+        assert fp.source == "profile" and fp.value in options

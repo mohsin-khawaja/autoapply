@@ -174,7 +174,11 @@ def _matches(pattern: str, haystack: str) -> bool:
 #: common abbreviation that fuzzy-matching alone can't bridge ("B.S." vs
 #: "Bachelor's Degree"). Same fact, different spelling — never a new claim.
 VALUE_ALIASES: dict[str, tuple[str, ...]] = {
-    "b.s.": ("Bachelor of Science", "Bachelor's Degree", "Bachelors", "Bachelor's"),
+    "b.s.": (
+        "Bachelor of Science", "Bachelor's Degree", "Bachelors", "Bachelor's",
+        "BS", "B.S", "BSc", "Bachelor", "Bachelor's degree (BA/BS)",
+        "Undergraduate Degree", "Bachelor Degree", "4 year degree",
+    ),
     "bs": ("Bachelor of Science", "Bachelor's Degree", "Bachelors", "Bachelor's"),
     "b.a.": ("Bachelor of Arts", "Bachelor's Degree", "Bachelors"),
     "m.s.": ("Master of Science", "Master's Degree", "Masters"),
@@ -212,8 +216,23 @@ VALUE_ALIASES: dict[str, tuple[str, ...]] = {
         "University of California, San Diego",
         "University of California - San Diego",
         "University of California San Diego",
+        "University of California-San Diego",
+        "University of California–San Diego",
         "UC San Diego",
         "UCSD",
+        "UC-San Diego",
+        "Univ. of California, San Diego",
         "San Diego",
     ),
+    # Race self-ID wording differs per form; all name the same category.
+    "asian": (
+        "Asian",
+        "Asian (Not Hispanic or Latino)",
+        "Asian or Pacific Islander",
+        "Asian/Pacific Islander",
+        "Asian - Not Hispanic or Latino",
+        "Asian American",
+    ),
+    # Some forms list the city with its state attached.
+    "hercules": ("Hercules", "Hercules, CA", "Hercules, California"),
 }
