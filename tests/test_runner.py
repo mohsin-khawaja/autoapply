@@ -654,3 +654,25 @@ def test_queue_works_fresh_postings_before_older_higher_scored_ones(conn):
                   score=40, date_posted=int(time.time()) - 2 * 86400)
     enqueue(conn, ["old", "new"])
     assert [j.job_id for j in queued_jobs(conn, 10)] == ["new", "old"]
+
+
+def test_run_skips_a_repost_of_an_already_submitted_role(conn):
+    """A batch can hold several ids for one req; only the first should apply."""
+    from autoapply.runner import _already_submitted
+
+    now = datetime.now(UTC).isoformat()
+    for jid in ("first", "repost"):
+        db.upsert_job(conn, id=jid, company_name="Voyager", title="ML Engineer",
+                      url=f"https://boards.greenhouse.io/v/{jid}", now_iso=now,
+                      ats="greenhouse", score=80)
+    db.record_application(conn, job_id="first", status="submitted")
+    conn.execute("UPDATE applications SET submitted_at=? WHERE job_id='first'", (now,))
+    conn.commit()
+
+    jobs = {j.job_id: j for j in queued_jobs(conn, 50)}
+    enqueue(conn, ["repost"])
+    conn.commit()
+    repost = next(j for j in queued_jobs(conn, 50) if j.job_id == "repost")
+    assert _already_submitted(conn, repost) is True
+    # The submitted row itself is not considered a duplicate of itself.
+    assert jobs.get("first") is None  # it is no longer queued

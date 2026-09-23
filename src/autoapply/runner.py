@@ -383,6 +383,20 @@ def _recover_page(page: Page) -> bool:
     return True
 
 
+
+def _already_submitted(conn: sqlite3.Connection, job: QueuedJob) -> bool:
+    """True when a different application to the same company + title was sent."""
+    row = conn.execute(
+        """SELECT 1 FROM applications a JOIN jobs j ON j.id = a.job_id
+           WHERE a.submitted_at IS NOT NULL
+             AND a.job_id != ?
+             AND j.company_name = ?
+             AND lower(trim(j.title)) = lower(trim(?))
+           LIMIT 1""",
+        (job.job_id, job.company_name, job.title),
+    ).fetchone()
+    return row is not None
+
 def run_queue(
     settings: Settings,
     *,
@@ -422,6 +436,22 @@ def run_queue(
                     console.print(
                         f"[dim]{done}/{len(jobs)} {job.company_name} — skipped "
                         f"({current['status']})[/]"
+                    )
+                    pending.pop(0)
+                    continue
+                # Checked at run time, not just when queueing: boards repost the
+                # same req under new ids, and a batch can hold several of them.
+                # A second application to a company+title already submitted
+                # reads as spam.
+                if _already_submitted(conn, job):
+                    db.record_application(
+                        conn, job_id=job.job_id, status="skipped",
+                        notes="already submitted this company + title",
+                    )
+                    conn.commit()
+                    console.print(
+                        f"[dim]{done}/{len(jobs)} {job.company_name} — "
+                        f"already applied to this role[/]"
                     )
                     pending.pop(0)
                     continue
