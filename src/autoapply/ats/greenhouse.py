@@ -11,6 +11,7 @@ fields for the human.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -195,6 +196,24 @@ _EXTRACT_JS = """
 
 
 
+
+#: A phone country picker's options ("Isle of Man+44", "United States+1").
+_DIAL_CODE = re.compile(r"\+\d{1,4}$")
+
+
+def _is_phone_country_list(options: list[str]) -> bool:
+    """True when the options are dial codes, not answers to the visible question.
+
+    Greenhouse renders its phone country picker as a sibling combobox. When its
+    listbox was read for another field, "School" was filled with
+    "Isle of Man+44". Dial codes are never a valid answer to a form question,
+    so such a list is discarded rather than attached.
+    """
+    if len(options) < 3:
+        return False
+    hits = sum(1 for o in options if _DIAL_CODE.search(o))
+    return hits >= max(2, len(options) // 3)
+
 def _hydrate_combobox_options(page: Page, fields: list[FormField]) -> None:
     """Open closed react-select comboboxes to read their options.
 
@@ -222,7 +241,9 @@ def _hydrate_combobox_options(page: Page, fields: list[FormField]) -> None:
                 page.keyboard.press("Escape")
                 continue  # no owned listbox => cannot attribute options safely
             opts = page.locator(f"#{list_id} [role='option'], #{list_id} li").all_text_contents()
-            f.options = [" ".join(o.split()) for o in opts if o and o.strip()]
+            cleaned = [" ".join(o.split()) for o in opts if o and o.strip()]
+            if not _is_phone_country_list(cleaned):
+                f.options = cleaned
             page.keyboard.press("Escape")
         except Exception:  # noqa: BLE001 - one stuck widget must not fail extraction
             try:

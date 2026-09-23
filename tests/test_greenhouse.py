@@ -332,3 +332,16 @@ def test_fill_error_flags_field_not_whole_job(browser_page, adapter) -> None:
     assert result.status == "needs_input"
     assert "Ghost" in result.needs_input_labels
     assert browser_page.evaluate("window.__submitted") is False
+
+
+def test_phone_country_options_are_never_attached_to_a_field():
+    """A sibling phone picker filled "School" with "Isle of Man+44"."""
+    from autoapply.ats.greenhouse import _is_phone_country_list
+
+    assert _is_phone_country_list(
+        ["Isle of Man+44", "United States+1", "Ireland+353", "Japan+81"]
+    )
+    # Real answer lists are untouched.
+    assert not _is_phone_country_list(["UCSD", "MIT", "Stanford", "Other"])
+    assert not _is_phone_country_list(["Yes", "No"])
+    assert not _is_phone_country_list([])
