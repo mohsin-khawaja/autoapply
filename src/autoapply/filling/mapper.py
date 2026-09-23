@@ -137,15 +137,47 @@ def polarity_ok(value: str, option: str) -> bool:
     return not (_is_negative(value) and not _is_negative(option))
 
 
+#: Degree levels, most specific spelling first. A bachelor's must never match a
+#: master's option: "Bachelor of Science" vs "Master of Business Administration"
+#: scores 85.5 on WRatio — above threshold — because both share "... of ...".
+_DEGREE_LEVELS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("doctorate", ("phd", "ph.d", "doctor", "doctoral", "d.phil")),
+    ("master", ("master", "m.s", "msc", "mba", "m.b.a", "m.eng", "graduate degree")),
+    ("bachelor", ("bachelor", "b.s", "bsc", "b.a", "undergraduate", "4 year degree")),
+    ("associate", ("associate degree", "a.a", "a.s.", "two year")),
+    ("highschool", ("high school", "ged", "secondary school", "diploma")),
+)
+
+
+def degree_level(text: str) -> str | None:
+    """Classify a degree string by level, or None when it names no level."""
+    low = f" {text.lower().strip()} "
+    for level, markers in _DEGREE_LEVELS:
+        if any(mk in low for mk in markers):
+            return level
+    return None
+
+
+def level_ok(value: str, option: str) -> bool:
+    """False when matching ``option`` would claim a different degree level.
+
+    Only constrains pairs where BOTH name a level; an unlabelled option
+    ("Other", "Computer Science") is unaffected.
+    """
+    a, b = degree_level(value), degree_level(option)
+    return not (a and b and a != b)
+
+
 def _fuzzy_option(value: str, options: list[str], threshold: int) -> tuple[str | None, float]:
     """Best option match for ``value`` via rapidfuzz. Returns (option, score 0..100).
 
-    Candidates that would invert the answer's meaning are removed before
-    scoring, so a safe lower-scoring option can still win.
+    Candidates that would invert the answer's meaning — a negation flip or a
+    degree-level change — are removed before scoring, so a safe lower-scoring
+    option can still win.
     """
     if not options:
         return None, 0.0
-    safe = [o for o in options if polarity_ok(value, o)]
+    safe = [o for o in options if polarity_ok(value, o) and level_ok(value, o)]
     if not safe:
         return None, 0.0
     match = process.extractOne(value, safe, scorer=fuzz.WRatio)

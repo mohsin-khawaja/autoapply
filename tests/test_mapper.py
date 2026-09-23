@@ -416,3 +416,35 @@ def test_city_matches_with_or_without_state_suffix():
             FormField(key="c", field_type="select", label="City", selector="#c", options=options)
         ]).fields[0]
         assert fp.source == "profile" and fp.value in options
+
+
+def test_bachelors_never_matches_a_masters_option():
+    """Live bug: "B.S." filled "Master of Business Administration" at 86%.
+
+    "Bachelor of Science" vs "Master of Business Administration" scores 85.5 on
+    WRatio because both share "... of ...". That is a false credential claim.
+    """
+    from autoapply.filling.mapper import degree_level, level_ok
+
+    assert not level_ok("Bachelor of Science", "Master of Business Administration")
+    assert degree_level("MBA") == "master"
+    assert degree_level("B.S.") == "bachelor"
+    assert degree_level("Computer Science") is None  # no level named => unconstrained
+
+    fp = _plan([
+        FormField(
+            key="d", field_type="select", label="Degree", selector="#d",
+            options=["Master of Business Administration", "Other"],
+        )
+    ]).fields[0]
+    assert fp.value != "Master of Business Administration"
+
+
+def test_every_degree_level_is_kept_distinct():
+    from autoapply.filling.mapper import level_ok
+
+    for bad in ("PhD", "Doctorate", "Master's Degree", "MBA", "Associate Degree", "High School"):
+        assert not level_ok("Bachelor of Science", bad), bad
+    # The right level still matches.
+    for good in ("Bachelor's Degree", "BS", "Undergraduate Degree"):
+        assert level_ok("Bachelor of Science", good), good

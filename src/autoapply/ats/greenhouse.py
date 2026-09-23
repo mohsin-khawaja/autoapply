@@ -209,9 +209,17 @@ def _hydrate_combobox_options(page: Page, fields: list[FormField]) -> None:
             continue
         try:
             loc = page.locator(f.selector).first
+            # Scope to THIS widget's listbox. A global [role=option] query
+            # returns whatever listbox happens to be open — a phone country
+            # picker filled a "School" field with "Isle of Man+44".
+            list_id = loc.get_attribute("aria-controls") or loc.get_attribute("aria-owns")
             loc.click(timeout=1_500)
             page.wait_for_timeout(250)
-            opts = page.locator('[role="option"]').all_text_contents()
+            list_id = list_id or loc.get_attribute("aria-controls") or loc.get_attribute("aria-owns")
+            if not list_id:
+                page.keyboard.press("Escape")
+                continue  # no owned listbox => cannot attribute options safely
+            opts = page.locator(f"#{list_id} [role='option'], #{list_id} li").all_text_contents()
             f.options = [" ".join(o.split()) for o in opts if o and o.strip()]
             page.keyboard.press("Escape")
         except Exception:  # noqa: BLE001 - one stuck widget must not fail extraction
