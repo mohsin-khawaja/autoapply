@@ -215,7 +215,9 @@ def _hydrate_combobox_options(page: Page, fields: list[FormField]) -> None:
             list_id = loc.get_attribute("aria-controls") or loc.get_attribute("aria-owns")
             loc.click(timeout=1_500)
             page.wait_for_timeout(250)
-            list_id = list_id or loc.get_attribute("aria-controls") or loc.get_attribute("aria-owns")
+            list_id = list_id or (
+                loc.get_attribute("aria-controls") or loc.get_attribute("aria-owns")
+            )
             if not list_id:
                 page.keyboard.press("Escape")
                 continue  # no owned listbox => cannot attribute options safely

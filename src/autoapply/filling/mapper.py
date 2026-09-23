@@ -140,10 +140,12 @@ def polarity_ok(value: str, option: str) -> bool:
 #: Degree levels, most specific spelling first. A bachelor's must never match a
 #: master's option: "Bachelor of Science" vs "Master of Business Administration"
 #: scores 85.5 on WRatio — above threshold — because both share "... of ...".
+#: Order matters: bachelor is tested before master because "UNDERgraduate
+#: degree" contains the substring "graduate degree".
 _DEGREE_LEVELS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("doctorate", ("phd", "ph.d", "doctor", "doctoral", "d.phil")),
+    ("bachelor", ("bachelor", "b.s", "bsc", "b.a", "undergrad", "4 year degree")),
     ("master", ("master", "m.s", "msc", "mba", "m.b.a", "m.eng", "graduate degree")),
-    ("bachelor", ("bachelor", "b.s", "bsc", "b.a", "undergraduate", "4 year degree")),
     ("associate", ("associate degree", "a.a", "a.s.", "two year")),
     ("highschool", ("high school", "ged", "secondary school", "diploma")),
 )
