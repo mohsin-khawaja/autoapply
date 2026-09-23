@@ -127,3 +127,28 @@ def test_data_labeling_gigs_are_excluded():
     ):
         assert score(t) == 0, t
     assert score("AI Analyst") >= 70
+
+
+def test_language_gated_and_gig_training_roles_are_excluded():
+    """"AI Trainer - Bosnian" is gated on a language not on the profile."""
+    def score(title):
+        return simplify.heuristic_score(simplify.Listing(
+            id="x", company_name="A", title=title, url="https://x",
+            locations=["Remote"], sponsorship="", category="eng",
+            active=True, is_visible=True, date_posted=None,
+        ))
+
+    for t in (
+        "AI Trainer - Bosnian",
+        "AI Trainer - Advanced Indonesian Fluency",
+        "AI Trainer",
+        "Content Evaluator - Bilingual, Vietnamese and English",
+        "French Language Specialist - Freelance AI Trainer",
+        "PreK to K Math Teacher",
+        "Spanish Translator",
+    ):
+        assert score(t) == 0, t
+
+    # Real target roles are untouched.
+    for t in ("AI Engineer", "GTM Engineer", "Machine Learning Engineer, New Grad"):
+        assert score(t) >= 55, t

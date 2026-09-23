@@ -111,6 +111,24 @@ EXCLUDE_TITLE = (
     # data labeling and rating, not analysis.
     "data labeling", "labeling", "labelling", "annotation", "annotator",
     "transcription", "speaker", "rater", "linguist", "crowd",
+    # AI-training gig work, usually gated on a language he does not speak
+    # ("AI Trainer - Bosnian") or on unrelated domain expertise.
+    "ai trainer", "ai training", "trainer", "tutor", "teacher", "teaching",
+    "translator", "translation", "bilingual", "language specialist",
+    "content evaluator", "evaluator", "freelance", "contractor", "part-time",
+    "fluency", "native speaker",
+)
+
+#: Languages other than English appearing in a title mean the role is gated on
+#: speaking it. None of these are on the profile, so the posting is not winnable.
+_FOREIGN_LANGUAGE = (
+    "bosnian", "indonesian", "vietnamese", "croatian", "serbian", "albanian",
+    "dutch", "italian", "romanian", "turkish", "estonian", "bulgarian",
+    "catalan", "norwegian", "russian", "ukrainian", "czech", "danish",
+    "greek", "portuguese", "slovak", "finnish", "french", "german",
+    "hungarian", "polish", "swedish", "spanish", "japanese", "korean",
+    "mandarin", "cantonese", "chinese", "hindi", "arabic", "hebrew", "thai",
+    "tagalog", "swahili", "farsi", "urdu", "bengali", "tamil", "telugu",
 )
 
 #: Explicit new-grad / entry-level markers. These are what he can actually land,
@@ -185,6 +203,8 @@ def heuristic_score(listing: Listing) -> int:
 
     # Hard excludes.
     if any(h in title for h in EXCLUDE_TITLE):
+        return 0
+    if any(lang in title for lang in _FOREIGN_LANGUAGE):
         return 0
     if any(h in loc_text for h in EXCLUDE_LOCATION_HINTS) and not _has_us_location(listing):
         return 0
