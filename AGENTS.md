@@ -64,11 +64,6 @@ Register an adapter from your own file via `ats.base.register(YourAdapter)` — 
 edit to base.py needed. Interface changes go through a separate interface PR that
 all branches rebase on.
 
-## LLM provider
-Answer generation runs on the Anthropic API by default (`AUTOAPPLY_LLM=anthropic`,
-model `claude-opus-5`). This spends tokens per application. `AUTOAPPLY_LLM=ollama`
-switches back to the local model and spends nothing. Discovery never calls an LLM.
-
 ## Commands
 - `uv sync` — install deps
 - `uv run playwright install chromium`

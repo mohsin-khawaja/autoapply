@@ -1,14 +1,22 @@
-.venv/
+profile.yaml
+assets/
+runs/
+*.db
+*.sqlite
+.env
+
+# Local runtime state — never commit.
+# browser_data is a real Chrome profile holding cookies and logged-in sessions
+# for job sites; autoapply.db holds application history.
+.autoapply/
+runs/*.log
+runs/*.jsonl
+runs/*.err
+runs/*.out
+
+# Secrets — never commit.
+.env
+
+# Python bytecode
 __pycache__/
 *.pyc
-*.db
-*.db-journal
-*.db-wal
-runs/*
-!runs/.gitkeep
-browser_data/
-assets/*
-!assets/.gitkeep
-.autoapply/
-.ruff_cache/
-.pytest_cache/

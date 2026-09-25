@@ -30,6 +30,17 @@ class Settings:
     home: Path = field(default_factory=lambda: _home())
     profile_path: Path = field(default_factory=lambda: REPO_ROOT / "profile.yaml")
 
+    # LLM provider: "anthropic" (API, better answers) or "ollama" (local, free).
+    llm_provider: str = "anthropic"
+    # Form answers are two or three sentences and constrained-option picks are
+    # classification, so the cheapest current model is the right tool: Haiku is
+    # $1/$5 per MTok against Opus at $5/$25. Override with
+    # AUTOAPPLY_ANTHROPIC_MODEL=claude-sonnet-5 for longer written answers.
+    anthropic_model: str = "claude-haiku-4-5"
+    #: Identity-linked API keys must name the workspace they act in; the API
+    #: rejects the request with a 400 otherwise. Console -> Settings -> Workspaces.
+    anthropic_workspace_id: str = ""
+
     # Ollama
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b-instruct"
@@ -42,6 +53,30 @@ class Settings:
     rate_min_seconds: float = 45.0
     rate_max_seconds: float = 90.0
     max_per_run: int = 15
+
+    # Hard wall-clock cap per application. Past this, the job is abandoned (cached
+    # to the dashboard as needs_input) and the run moves on — throughput over a
+    # single slow form. 0 disables the cap.
+    per_job_seconds: float = 120.0
+
+    # ---- discovery (runs unattended on a schedule; see scripts/discover.sh) ----
+    #: Skip a scheduled run when the last success is newer than this. Guards the
+    #: 6-hourly timer against double-syncing on reboot/wake catch-up.
+    discovery_min_interval_hours: float = 5.0
+    #: No successful discovery in this long => the watchdog alerts. Sized well
+    #: above the 6h cadence so an ordinary missed slot is not noise, but a day
+    #: like 2026-08-04 (Mac powered off through the window) is caught.
+    discovery_stale_hours: float = 14.0
+    #: Per-source HTTP retry budget; transient 5xx/timeouts must not lose a run.
+    discovery_retries: int = 3
+    #: ntfy.sh topic for phone push. Empty disables that channel entirely — no
+    #: request is made, so nothing leaves the machine unless this is set.
+    ntfy_topic: str = ""
+
+    @property
+    def discovery_log(self) -> Path:
+        """Structured per-source run records (JSON lines)."""
+        return self.runs_dir / "discovery.jsonl"
 
     # Auto-submit is OFF by default; only ATSs in this set may be auto-submitted.
     auto_submit_allowlist: set[ATSKind] = field(default_factory=set)
@@ -64,16 +99,56 @@ class Settings:
             d.mkdir(parents=True, exist_ok=True)
 
 
+
+def _load_dotenv(path: Path) -> None:
+    """Load KEY=VALUE lines from ``.env`` into os.environ if not already set.
+
+    Secrets live here rather than in the repo or a shell profile, so an
+    unattended run started by launchd (which inherits almost no environment)
+    still sees them. A real environment variable always wins, so an explicit
+    export can override the file.
+    """
+    if not path.exists():
+        return
+    try:
+        lines = path.read_text().splitlines()
+    except OSError:
+        return
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip().removeprefix("export ").strip()
+        value = value.strip().strip("'\"")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
 def _home() -> Path:
     env = os.environ.get("AUTOAPPLY_HOME")
     return Path(env).expanduser().resolve() if env else (REPO_ROOT / ".autoapply")
 
 
 def load_settings() -> Settings:
-    """Build settings from defaults + environment. Cheap; call freely."""
+    """Build settings from defaults + .env + environment. Cheap; call freely."""
+    _load_dotenv(REPO_ROOT / ".env")
     s = Settings()
     if model := os.environ.get("AUTOAPPLY_MODEL"):
         s.ollama_model = model
     if host := os.environ.get("AUTOAPPLY_OLLAMA_HOST"):
         s.ollama_host = host
+    if topic := os.environ.get("AUTOAPPLY_NTFY_TOPIC"):
+        s.ntfy_topic = topic.strip()
+    if provider := os.environ.get("AUTOAPPLY_LLM"):
+        s.llm_provider = provider.strip().lower()
+    if model := os.environ.get("AUTOAPPLY_ANTHROPIC_MODEL"):
+        s.anthropic_model = model.strip()
+    if ws := os.environ.get("ANTHROPIC_WORKSPACE_ID"):
+        s.anthropic_workspace_id = ws.strip()
+    if allow := os.environ.get("AUTOAPPLY_AUTO_SUBMIT"):
+        # comma-separated ATS kinds, e.g. "greenhouse,lever" (SPEC §10 allowlist)
+        s.auto_submit_allowlist = {
+            ATSKind(k.strip().lower()) for k in allow.split(",") if k.strip()
+        }
     return s
