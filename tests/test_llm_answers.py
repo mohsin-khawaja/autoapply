@@ -208,3 +208,44 @@ def test_answers_edit_unchanged_keeps_row(
     conn.close()
     assert row["answer"] == "Original answer."
     assert row["edited_at"] is None
+
+
+def test_choose_option_recovers_a_near_miss_reply():
+    """"Yes, I am authorized" must resolve to the "Yes" option, not needs_input."""
+    from autoapply.filling.llm_answers import choose_option
+    from autoapply.profile import Profile
+
+    class _C:
+        def chat(self, messages, **kw):
+            return "Yes, I am authorized"
+
+    p = Profile.model_validate(
+        {"identity": {"first_name": "T", "last_name": "U", "email": "t@e.com"}}
+    )
+
+    class _J:
+        title = "x"
+        company_name = "y"
+        id = "j"
+
+    assert choose_option("Authorized?", ["Yes", "No"], p, _J(), _C()) == "Yes"
+
+
+def test_choose_option_still_declines_a_bad_reply():
+    from autoapply.filling.llm_answers import choose_option
+    from autoapply.profile import Profile
+
+    class _C:
+        def chat(self, messages, **kw):
+            return "purple elephants"
+
+    p = Profile.model_validate(
+        {"identity": {"first_name": "T", "last_name": "U", "email": "t@e.com"}}
+    )
+
+    class _J:
+        title = "x"
+        company_name = "y"
+        id = "j"
+
+    assert choose_option("Team?", ["Platform", "Product"], p, _J(), _C()) is None

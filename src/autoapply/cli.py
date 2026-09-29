@@ -10,9 +10,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from autoapply import db
+from autoapply import db, llm
 from autoapply.config import load_settings
-from autoapply.ollama import OllamaClient
 from autoapply.profile import load_profile
 from autoapply.sources import simplify
 
@@ -28,7 +27,6 @@ app.add_typer(answers_app, name="answers")
 
 console = Console()
 
-_MS2 = "[yellow]stub[/] — wired in Milestone 2 integration (SPEC.md §9)."
 _WS_D = "[yellow]stub[/] — implemented by workstream D (feat/llm-answers)."
 
 
@@ -60,8 +58,13 @@ def init() -> None:
     else:
         console.print(f"[yellow]![/] resume missing — drop it at {resume}")
 
-    # Ollama
-    ok, msg = OllamaClient(host=settings.ollama_host, model=settings.ollama_model).health()
+    # LLM provider (AUTOAPPLY_LLM=anthropic|ollama)
+    client = llm.make_client(settings)
+    ok, msg = client.health()
+    if not ok and settings.llm_provider == "ollama":
+        resolved = client.resolve_model(fallback=settings.ollama_fallback_model)
+        if resolved:
+            ok, msg = True, f"Ollama OK (using installed {resolved})"
     console.print(f"[{'green' if ok else 'yellow'}]{'✓' if ok else '!'}[/] {msg}")
 
     # Playwright chromium
@@ -91,6 +94,205 @@ def sync(
         f"new {result.new}, changed {result.changed}, inactive {result.inactive}, "
         f"score≥70 {result.scored_ge_70}"
     )
+
+
+@app.command()
+def discover(
+    status: bool = typer.Option(False, "--status", help="Show last run and staleness; exit."),
+    force: bool = typer.Option(False, "--force", help="Ignore the min-interval skip guard."),
+    only: str = typer.Option(
+        None, "--only", help="Comma-separated sources (simplify,ycombinator,referrals)."
+    ),
+    notify_on_failure: bool = typer.Option(
+        True, "--notify/--no-notify", help="Alert on failure or staleness."
+    ),
+) -> None:
+    """Run job discovery. Safe to run unattended from launchd.
+
+    Pure HTTP — no browser, no LLM, no terminal needed. Communicates with the
+    apply step only through SQLite. Exits non-zero if every source failed, so
+    the scheduler sees the failure too.
+    """
+    from autoapply import discovery
+    from autoapply import notify as notify_mod
+
+    settings = load_settings()
+    settings.ensure_dirs()
+
+    if status:
+        _print_discovery_status(settings, discovery)
+        return
+
+    if not force and discovery.should_skip(settings):
+        hours = discovery.staleness_hours(settings.discovery_log) or 0
+        console.print(f"[dim]skipping — last success {hours:.1f}h ago[/]")
+        return
+
+    # Read staleness BEFORE running: once this run succeeds the gap is erased,
+    # and a gap is the failure that actually bites (2026-08-04 — the Mac was
+    # powered off through the window, so no run existed to report anything).
+    gap_hours = discovery.staleness_hours(settings.discovery_log)
+    was_stale = discovery.is_stale(settings)
+
+    names = tuple(s.strip() for s in only.split(",")) if only else None
+    results = discovery.discover(settings, only=names)
+
+    if was_stale and gap_hours is not None and notify_on_failure:
+        msg = f"no successful discovery for {gap_hours:.0f}h — scheduled runs were missed"
+        console.print(f"[yellow]{msg}[/]")
+        notify_mod.notify("autoapply discovery was stale", msg, settings)
+
+    for r in results:
+        if r.ok:
+            console.print(
+                f"[green]{r.source}[/] {r.fetched} fetched, {r.new} new ({r.duration_s}s)"
+            )
+        else:
+            console.print(f"[red]{r.source} failed[/] {r.error}")
+
+    failed = [r for r in results if not r.ok]
+    if failed and notify_on_failure:
+        detail = "; ".join(f"{r.source}: {r.error[:80]}" for r in failed)
+        sent = notify_mod.notify("autoapply discovery failed", detail, settings)
+        console.print(f"[dim]alerted via: {', '.join(sent) or 'nothing configured'}[/]")
+    if results and not any(r.ok for r in results):
+        raise typer.Exit(1)
+
+
+def _print_discovery_status(settings, discovery) -> None:
+    """Last outcome per source plus staleness — the 'did it silently die?' view."""
+    hours = discovery.staleness_hours(settings.discovery_log)
+    if hours is None:
+        console.print("[red]no successful discovery on record[/]")
+    else:
+        colour = "red" if discovery.is_stale(settings) else "green"
+        console.print(
+            f"[{colour}]last success {hours:.1f}h ago[/] "
+            f"(stale after {settings.discovery_stale_hours:.0f}h)"
+        )
+    records = discovery.read_records(settings.discovery_log)
+    latest: dict[str, dict] = {}
+    for rec in records:
+        latest[rec.get("source", "?")] = rec
+    if not latest:
+        console.print("[dim]no runs logged yet — run `autoapply discover`[/]")
+        return
+    table = Table(box=None, pad_edge=False)
+    for col in ("source", "ok", "fetched", "new", "when"):
+        table.add_column(col)
+    for name, rec in sorted(latest.items()):
+        table.add_row(
+            name,
+            "[green]yes[/]" if rec.get("ok") else "[red]no[/]",
+            str(rec.get("fetched", 0)),
+            str(rec.get("new", 0)),
+            str(rec.get("ts", ""))[:19],
+        )
+    console.print(table)
+
+
+@app.command()
+def away(
+    interval: str = typer.Option("45m", "--interval", help="Sleep between cycles (e.g. 45m, 30s)."),
+    max_jobs: int = typer.Option(40, "--max", help="Jobs to work per cycle."),
+    min_score: int = typer.Option(0, "--min-score", help="Score floor when topping up the queue."),
+    cycles: int = typer.Option(None, "--cycles", help="Stop after N cycles (default: forever)."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="One cycle, no applying."),
+) -> None:
+    """Autonomous mode: discover, queue, apply — on a loop until killed.
+
+    Unlike scripts/away_run.sh this survives an empty queue: it sleeps and tries
+    again next cycle instead of exiting, so leaving it running actually keeps
+    applying. One summary line per cycle.
+    """
+    from autoapply import away as away_mod
+
+    settings = load_settings()
+    settings.ensure_dirs()
+    seconds = _parse_interval(interval)
+
+    if dry_run:
+        conn = db.connect(settings.db_path)
+        try:
+            queued = away_mod._top_up_queue(
+                conn, settings, batch=max_jobs, min_score=min_score
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        console.print(
+            f"[green]dry run[/] — would work {max_jobs} job(s) per cycle every "
+            f"{seconds / 60:.0f}m; queued {queued} now. No applications sent."
+        )
+        return
+
+    if not settings.auto_submit_allowlist:
+        console.print(
+            "[yellow]note:[/] no ATS allowlist — nothing will auto-submit. "
+            "Set AUTOAPPLY_AUTO_SUBMIT=greenhouse,lever,ashby to submit."
+        )
+    away_mod.away(
+        settings,
+        interval_seconds=seconds,
+        batch=max_jobs,
+        min_score=min_score,
+        auto_submit=bool(settings.auto_submit_allowlist),
+        max_cycles=cycles,
+    )
+
+
+def _parse_interval(text: str) -> float:
+    """"45m" -> 2700.0. Accepts s/m/h suffixes; a bare number means seconds."""
+    t = text.strip().lower()
+    mult = {"s": 1.0, "m": 60.0, "h": 3600.0}.get(t[-1:], None)
+    try:
+        value = float(t[:-1]) * mult if mult else float(t)
+    except ValueError as e:
+        raise typer.BadParameter(f"bad interval {text!r} — try 45m, 2h, or 900") from e
+    if value < 30:
+        raise typer.BadParameter("interval must be at least 30s")
+    return value
+
+
+@app.command()
+def yc() -> None:
+    """Pull new-grad-eligible YC startup roles into the job table.
+
+    Filters on the board's own ``minExperience`` field, so only postings that
+    say new grads are welcome are kept. YC applications go through a Work at a
+    Startup login and are a message to the founder, so these land in the manual
+    tier for you to send — the runner never auto-applies to them.
+    """
+    from autoapply.sources import ycombinator
+
+    settings = load_settings()
+    settings.ensure_dirs()
+    with console.status("fetching YC jobs…"):
+        result = ycombinator.sync(settings)
+    console.print(
+        f"[green]YC synced[/] {result.fetched} postings — "
+        f"new-grad eligible {result.new_grad}, new {result.new}"
+    )
+    console.print("[dim]YC roles need a Work at a Startup login — see the manual tier.[/]")
+
+
+@app.command()
+def referrals(
+    min_score: int = typer.Option(1, "--min-score", help="Skip postings below this fit."),
+) -> None:
+    """Pull postings from referral companies (Amazon, Odoo) and fit-score them."""
+    from autoapply.sources import referral
+
+    settings = load_settings()
+    settings.ensure_dirs()
+    with console.status("searching referral companies…"):
+        result = referral.scout(settings, min_score=min_score)
+    console.print(
+        f"[green]found[/] {result.fetched} postings — "
+        f"upserted {result.upserted}, score≥50 {result.scored_ge_50}"
+    )
+    for err in result.errors:
+        console.print(f"[yellow]![/] {err}")
 
 
 @app.command(name="list")
@@ -125,11 +327,107 @@ def list_jobs(
 
 @queue_app.command("add")
 def queue_add(
-    job_id: str = typer.Argument(None, help="Job id to enqueue."),
+    job_id: str = typer.Argument(None, help="Job id (or unique prefix) to enqueue."),
     top: int = typer.Option(None, "--top", help="Enqueue the top-N by score."),
+    min_score: int = typer.Option(70, "--min-score", help="Score floor for --top."),
+    fillable_only: bool = typer.Option(
+        True,
+        "--fillable-only/--all-ats",
+        help="Skip login-walled ATSs (Workday/iCIMS/YC) that an away run cannot complete.",
+    ),
 ) -> None:
-    """Enqueue a job (or the top-N). [stub]"""
-    console.print(_MS2)
+    """Enqueue a job by id, or the top-N scored jobs."""
+    from autoapply.runner import _ACCOUNT_WALLED, enqueue
+
+    settings = load_settings()
+    conn = db.connect(settings.db_path)
+    if top is not None:
+        # Over-fetch, then drop the login-walled rows so --top N really yields
+        # N postings the runner can fill rather than N rows it will mark manual.
+        # Selection happens in SQL: untried fillable postings can sit far below
+        # the top-N by score, so filtering a score-ordered page in Python misses
+        # them entirely and queues nothing.
+        if fillable_only:
+            walled = tuple(_ACCOUNT_WALLED)
+            rows = conn.execute(
+                f"""SELECT j.id FROM jobs j
+                    LEFT JOIN applications a ON a.job_id = j.id
+                    WHERE j.active = 1 AND j.is_visible = 1 AND j.score >= ?
+                      AND a.job_id IS NULL
+                      AND COALESCE(j.ats, '') NOT IN ({",".join("?" * len(walled))})
+                    -- Spend the N slots on ATSs that can actually complete an
+                    -- application; a high-scoring 'generic' row is usually a
+                    -- careers page with no inline form.
+                    ORDER BY CASE j.ats
+                               WHEN 'greenhouse' THEN 0
+                               WHEN 'lever'      THEN 1
+                               WHEN 'ashby'      THEN 2
+                               ELSE 3
+                             END,
+                             j.score DESC, j.date_posted DESC
+                    LIMIT ?""",
+                (min_score, *walled, top),
+            ).fetchall()
+            ids = [r["id"] for r in rows]
+        else:
+            ids = [j.id for j in db.list_jobs(conn, min_score=min_score, limit=top)]
+    elif job_id:
+        rows = conn.execute(
+            "SELECT id FROM jobs WHERE id LIKE ?", (job_id + "%",)
+        ).fetchall()
+        if len(rows) != 1:
+            console.print(f"[red]{len(rows)} jobs match {job_id!r}[/] — need a unique id/prefix.")
+            conn.close()
+            raise typer.Exit(1)
+        ids = [rows[0]["id"]]
+    else:
+        console.print("[red]give a job id or --top N[/]")
+        conn.close()
+        raise typer.Exit(1)
+    added = enqueue(conn, ids)
+    conn.close()
+    console.print(f"[green]queued[/] {added} job(s) ({len(ids) - added} already tracked)")
+
+
+@queue_app.command("list")
+def queue_list() -> None:
+    """Show the queue."""
+    settings = load_settings()
+    conn = db.connect(settings.db_path)
+    rows = conn.execute(
+        """SELECT a.job_id, j.company_name, j.title, j.score, j.ats
+           FROM applications a JOIN jobs j ON j.id = a.job_id
+           WHERE a.status = 'queued' ORDER BY j.score DESC"""
+    ).fetchall()
+    conn.close()
+    if not rows:
+        console.print("[yellow]queue empty[/]")
+        raise typer.Exit()
+    table = Table(title="queue")
+    table.add_column("score", justify="right", style="bold")
+    table.add_column("company")
+    table.add_column("title")
+    table.add_column("ats")
+    table.add_column("id", style="dim")
+    for r in rows:
+        table.add_row(
+            str(r["score"]), r["company_name"], r["title"], r["ats"] or "?", r["job_id"][:8]
+        )
+    console.print(table)
+
+
+@queue_app.command("remove")
+def queue_remove(job_id: str = typer.Argument(..., help="Job id (or prefix) to dequeue.")) -> None:
+    """Remove a queued job (only rows still in 'queued')."""
+    settings = load_settings()
+    conn = db.connect(settings.db_path)
+    with db.transaction(conn):
+        cur = conn.execute(
+            "DELETE FROM applications WHERE status = 'queued' AND job_id LIKE ?",
+            (job_id + "%",),
+        )
+    conn.close()
+    console.print(f"[green]removed[/] {cur.rowcount} queued row(s)")
 
 
 @app.command()
@@ -137,36 +435,174 @@ def run(
     dry_run: bool = typer.Option(False, "--dry-run", help="Plan field mappings; fill nothing."),
     auto_submit: bool = typer.Option(False, "--auto-submit", help="Allowlisted ATSs only."),
     max_per_run: int = typer.Option(15, "--max-per-run", help="Cap applications per run."),
+    unattended: bool = typer.Option(
+        False, "--unattended",
+        help="Never wait for input: skip anything needing a human, record it, keep going.",
+    ),
 ) -> None:
-    """Process the queue: fill → review pause → submit. [stub — needs adapters]"""
-    console.print(_MS2)
-    console.print(
-        "[dim]adapters land via workstreams A–D; `run` is wired in Milestone 2.[/]"
+    """Process the queue: fill → review pause → submit (human clicks Submit)."""
+    from autoapply.runner import run_queue
+
+    settings = load_settings()
+    settings.ensure_dirs()
+    run_queue(
+        settings, dry_run=dry_run, auto_submit=auto_submit,
+        max_per_run=max_per_run, unattended=unattended,
     )
 
 
 @app.command()
-def open(job_id: str = typer.Argument(..., help="Manual-tier job id.")) -> None:
-    """Open a manual-tier posting in the persistent browser. [stub]"""
-    console.print(_MS2)
+def open(job_id: str = typer.Argument(..., help="Manual-tier job id (or prefix).")) -> None:
+    """Open a manual-tier posting in the persistent browser."""
+    from autoapply.browser import launch_context
+
+    settings = load_settings()
+    conn = db.connect(settings.db_path)
+    row = conn.execute(
+        "SELECT COALESCE(final_url, url) u FROM jobs WHERE id LIKE ?", (job_id + "%",)
+    ).fetchone()
+    conn.close()
+    if row is None:
+        console.print(f"[red]no job matching {job_id!r}[/]")
+        raise typer.Exit(1)
+    console.print(f"opening {row['u']} — close the browser window when done.")
+    with launch_context(settings.browser_data_dir, headed=True) as (_, page):
+        page.goto(row["u"])
+        console.input("[dim]Enter to close…[/] ")
+
+
+@app.command()
+def skip(
+    pattern: str = typer.Argument(
+        ..., help="Company or title text to skip, e.g. 'palantir' or 'defense'."
+    ),
+    undo: bool = typer.Option(False, "--undo", help="Put skipped matches back in the queue."),
+) -> None:
+    """Skip queued applications matching PATTERN — takes effect on a live run.
+
+    Safe to use while a background batch is going: the runner re-checks each
+    job's status just before it starts, so a skip applies immediately without
+    restarting the run. Already-submitted applications are never touched.
+    """
+    settings = load_settings()
+    conn = db.connect(settings.db_path)
+    like = f"%{pattern.lower()}%"
+    if undo:
+        with db.transaction(conn):
+            cur = conn.execute(
+                """UPDATE applications SET status='queued', notes=NULL
+                   WHERE status='skipped' AND job_id IN (
+                     SELECT id FROM jobs
+                     WHERE lower(company_name) LIKE ? OR lower(title) LIKE ?)""",
+                (like, like),
+            )
+        console.print(f"[green]re-queued[/] {cur.rowcount} application(s) matching {pattern!r}")
+        conn.close()
+        raise typer.Exit()
+
+    rows = conn.execute(
+        """SELECT j.company_name, j.title FROM applications a JOIN jobs j ON j.id = a.job_id
+           WHERE a.status='queued' AND (lower(j.company_name) LIKE ? OR lower(j.title) LIKE ?)""",
+        (like, like),
+    ).fetchall()
+    if not rows:
+        console.print(f"[yellow]nothing queued matches[/] {pattern!r}")
+        conn.close()
+        raise typer.Exit(1)
+    with db.transaction(conn):
+        conn.execute(
+            """UPDATE applications SET status='skipped', notes='skipped by request'
+               WHERE status='queued' AND job_id IN (
+                 SELECT id FROM jobs
+                 WHERE lower(company_name) LIKE ? OR lower(title) LIKE ?)""",
+            (like, like),
+        )
+    conn.close()
+    console.print(f"[green]skipped[/] {len(rows)} application(s):")
+    for r in rows[:10]:
+        console.print(f"  [dim]{r['company_name']} — {r['title'][:50]}[/]")
+    if len(rows) > 10:
+        console.print(f"  [dim]… and {len(rows) - 10} more[/]")
+    console.print("[dim]a running batch picks this up on its next job[/]")
 
 
 @app.command()
 def status() -> None:
-    """Show application tracking. [stub]"""
-    console.print(_MS2)
+    """Show application tracking."""
+    settings = load_settings()
+    conn = db.connect(settings.db_path)
+    counts = conn.execute(
+        "SELECT status, COUNT(*) c FROM applications GROUP BY status ORDER BY c DESC"
+    ).fetchall()
+    rows = conn.execute(
+        """SELECT a.status, a.submitted_at, a.filled_at, j.company_name, j.title
+           FROM applications a JOIN jobs j ON j.id = a.job_id
+           WHERE a.status != 'queued'
+           ORDER BY COALESCE(a.submitted_at, a.filled_at) DESC LIMIT 30"""
+    ).fetchall()
+    conn.close()
+    if not counts:
+        console.print("[yellow]no applications tracked[/] — `autoapply queue add` first.")
+        raise typer.Exit()
+    console.print("  ".join(f"[bold]{r['status']}[/] {r['c']}" for r in counts))
+    if rows:
+        table = Table(title="recent")
+        table.add_column("status")
+        table.add_column("company")
+        table.add_column("title")
+        table.add_column("when", style="dim")
+        for r in rows:
+            table.add_row(
+                r["status"], r["company_name"], r["title"],
+                (r["submitted_at"] or r["filled_at"] or "")[:16],
+            )
+        console.print(table)
 
 
 @app.command()
 def export(fmt: str = typer.Argument("csv", help="Export format (csv).")) -> None:
-    """Export applications. [stub]"""
-    console.print(_MS2)
+    """Export applications to runs/applications.csv."""
+    import csv
+
+    if fmt != "csv":
+        console.print(f"[red]unsupported format {fmt!r}[/] — only csv.")
+        raise typer.Exit(1)
+    settings = load_settings()
+    settings.ensure_dirs()
+    conn = db.connect(settings.db_path)
+    rows = conn.execute(
+        """SELECT a.job_id, j.company_name, j.title, j.ats, j.score, a.status,
+                  a.filled_at, a.submitted_at, COALESCE(j.final_url, j.url) AS url
+           FROM applications a JOIN jobs j ON j.id = a.job_id ORDER BY a.id"""
+    ).fetchall()
+    conn.close()
+    out = settings.runs_dir / "applications.csv"
+    with out.open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow([
+            "job_id", "company", "title", "ats", "score", "status",
+            "filled_at", "submitted_at", "url",
+        ])
+        w.writerows([list(r) for r in rows])
+    console.print(f"[green]exported[/] {len(rows)} rows -> {out}")
 
 
 @app.command()
-def retry(job_id: str = typer.Argument(..., help="Job id to retry.")) -> None:
-    """Retry a failed application. [stub]"""
-    console.print(_MS2)
+def retry(job_id: str = typer.Argument(..., help="Job id (or prefix) to retry.")) -> None:
+    """Re-queue a failed/skipped/needs_input application."""
+    settings = load_settings()
+    conn = db.connect(settings.db_path)
+    with db.transaction(conn):
+        cur = conn.execute(
+            """UPDATE applications SET status='queued', notes=NULL
+               WHERE job_id LIKE ? AND status IN ('failed','skipped','needs_input')""",
+            (job_id + "%",),
+        )
+    conn.close()
+    if cur.rowcount == 0:
+        console.print("[yellow]nothing to retry[/] (must be failed/skipped/needs_input)")
+        raise typer.Exit(1)
+    console.print(f"[green]re-queued[/] {cur.rowcount} application(s)")
 
 
 def _edit_text(text: str) -> str | None:

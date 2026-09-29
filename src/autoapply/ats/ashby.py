@@ -229,7 +229,11 @@ class AshbyAdapter(base.BaseAdapter):
                         needs_input.append(f.label or f.key)
                     continue
                 value = fp.value
-                if self._fill_one(page, f, value):
+                try:
+                    ok = self._fill_one(page, f, value)
+                except Exception:  # noqa: BLE001 - one stuck widget must not
+                    ok = False     # sink the whole application; flag and move on
+                if ok:
                     filled += 1
                 else:
                     self._flag(page, f.selector)

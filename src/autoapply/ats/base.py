@@ -201,21 +201,94 @@ class BaseAdapter(ABC):
     # ---- shared, concrete; defined here, not owned by any workstream ----
 
     def review_pause(self, page: Page, plan: FillPlan, run_dir: Path) -> Path:
-        """Screenshot the filled form, print a field->value diff, and block.
+        """Screenshot the filled form for the review pause. Returns the path.
 
-        Concrete implementation is wired in Milestone 2. Returns the screenshot
-        path. Adapters generally do not override this.
+        The caller prints the field->value diff and blocks for human input;
+        this hook only captures evidence. Adapters generally do not override.
         """
-        raise NotImplementedError("review_pause is implemented during Milestone 2 integration")
+        run_dir.mkdir(parents=True, exist_ok=True)
+        shot = run_dir / f"{plan.job_id[:12]}.png"
+        page.screenshot(path=str(shot), full_page=True)
+        return shot
 
-    def submit(self, page: Page) -> FillResult:
-        """Click the form's Submit and detect the confirmation page/text.
+    #: Confirmation needles checked (lowercased) after a submit click.
+    _CONFIRMATION_NEEDLES: ClassVar[tuple[str, ...]] = (
+        "thank you for applying",
+        "thank you for your application",
+        "thank you for your interest",
+        "application submitted",
+        "application received",
+        "application has been received",
+        "we have received your application",
+        "we've received your application",
+        "your application has been submitted",
+    )
+
+    def submit(self, page: Page, shot_path: Path | None = None) -> FillResult:
+        """Click the form's Submit and PROVE the outcome (SPEC §1).
+
+        Submission is confirmed only on positive evidence: confirmation text, a
+        thank-you/confirmation URL, or the application form disappearing. If the
+        form is still present with visible validation errors, the click bounced
+        — reported as ``needs_input`` (NOT submitted), never as a false success.
+        A post-submit screenshot is captured at ``shot_path`` as proof.
 
         DANGER: only invoked when ``--auto-submit`` is set AND this adapter's
-        :attr:`kind` is on the config allowlist. Concrete implementation is wired
-        in Milestone 2.
+        :attr:`kind` is on the config allowlist. Never call this from :meth:`fill`.
         """
-        raise NotImplementedError("submit is implemented during Milestone 2 integration")
+        url_before = page.url
+        form = page.locator("form").first
+        button = page.locator("button[type=submit], input[type=submit]").first
+        try:
+            button.click()
+            page.wait_for_load_state("networkidle", timeout=15_000)
+        except Exception as e:  # noqa: BLE001 - report, never raise mid-run
+            return FillResult(status="failed", error=f"submit click failed: {e}")
+
+        page.wait_for_timeout(1_500)  # let confirmation render / errors surface
+        if shot_path is not None:
+            try:
+                page.screenshot(path=str(shot_path), full_page=True)
+            except Exception:  # noqa: BLE001 - proof is best-effort
+                pass
+
+        html = page.content().lower()
+        text_hit = any(n in html for n in self._CONFIRMATION_NEEDLES)
+        url_hit = any(w in page.url.lower() for w in ("confirmation", "thank", "submitted"))
+        form_gone = False
+        try:
+            form_gone = form.count() == 0 or not form.is_visible()
+        except Exception:  # noqa: BLE001
+            form_gone = False
+
+        # Validation errors still on screen => the submit did NOT go through.
+        error_visible = False
+        try:
+            errs = page.locator("[aria-invalid='true'], .field-error, [class*='error']:visible")
+            error_visible = errs.count() > 0 and errs.first.is_visible()
+        except Exception:  # noqa: BLE001
+            error_visible = False
+
+        positive = text_hit or url_hit or (form_gone and page.url != url_before)
+        confirmed = positive and not error_visible
+        if confirmed:
+            why = (
+                "confirmation text" if text_hit
+                else "confirmation url" if url_hit
+                else "form cleared"
+            )
+            return FillResult(
+                status="submitted", confirmation_detected=True, notes=f"submitted — {why}"
+            )
+        if error_visible:
+            return FillResult(
+                status="needs_input", confirmation_detected=False,
+                notes="submit rejected — validation errors remain; not submitted",
+            )
+        return FillResult(
+            status="filled", confirmation_detected=False,
+            notes="submit clicked but no confirmation detected — verify manually",
+        )
 
 
 #: All registered adapter classes, in registration (priority) order.

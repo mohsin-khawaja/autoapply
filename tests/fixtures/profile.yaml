@@ -1,0 +1,77 @@
+# Synthetic profile for the test suite.
+#
+# The real profile.yaml is gitignored (it holds a real name, email, phone and
+# EEO answers), so tests must not load it — on CI it does not exist, and 28
+# tests failed with FileNotFoundError.
+#
+# Identity here is fabricated. The education and answer values are the ones the
+# regression tests are about: "B.S." must not match an MBA option, "Asian" must
+# match "Asian or Pacific Islander", a negated veteran answer must not invert.
+identity:
+  first_name: Test
+  last_name: Applicant
+  email: test.applicant@example.com
+  phone: "555-0100"
+  location: { city: Hercules, state: CA, country: United States }
+  links:
+    linkedin: https://www.linkedin.com/in/test-applicant
+    website: https://example.com
+    github: https://github.com/test-applicant
+    twitter: https://x.com/testapplicant
+
+education:
+  - school: University of California, San Diego
+    degree: B.S.
+    major: "Cognitive Science: Machine Learning & Neural Computation"
+    minor: Computer Science
+    start: 2021-08
+    end: 2025-06
+    gpa: ""      # intentionally blank: the "never fabricate a GPA" tests rely on it
+
+experience:
+  - company: Example Labs
+    title: AI Engineer
+    location: "San Francisco, CA"
+    start: 2026-03
+    end: present
+    summary: "Builds LLM agents and retrieval pipelines."
+  - company: Example Analytics
+    title: Data Analyst
+    location: Remote
+    start: 2025-06
+    end: 2025-08
+    summary: "NLP sentiment classification over survey data."
+
+projects:
+  - name: ExampleProject
+    blurb: "A small ML system used as test data."
+
+skills: [Python, PyTorch, SQL, LLMs, RAG]
+
+documents:
+  resume: ./assets/Mohsin_Khawaja_Resume.pdf
+
+answers:
+  work_authorization_us: "Yes"
+  require_sponsorship: "No"
+  require_sponsorship_future: "No"
+  over_18: "Yes"
+  willing_to_relocate: "Yes"
+  remote_ok: "Yes"
+  start_date: "Immediately"
+  salary_expectation: "Open / market rate for the role and location"
+  how_did_you_hear: "Company website"
+  previously_employed_here: "No"
+  pronouns: "He/Him"
+  english_proficiency: "Native or bilingual proficiency"
+  sms_consent: "Yes"
+  criminal_record_disclosures: decline_unless_required
+  security_clearance: "No"
+  eeo:
+    gender: "Male"
+    race: "Asian"
+    hispanic_latino: "No"
+    orientation: "Heterosexual"
+    transgender: "No"
+    veteran: "I am not a protected veteran"
+    disability: "No"
