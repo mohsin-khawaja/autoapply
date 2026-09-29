@@ -150,6 +150,41 @@ _FOREIGN_LANGUAGE = (
     "tagalog", "swahili", "farsi", "urdu", "bengali", "tamil", "telugu",
 )
 
+#: A title must name one of these role families or it scores zero. This is a
+#: whitelist, not a filter: the boards carry thousands of engineering-adjacent
+#: reqs (hardware integration, triage, device, quant, marketing analytics) that
+#: consume rate-limited application slots and never convert for this profile.
+TARGET_FAMILIES = (
+    # Software engineering
+    "software engineer", "software developer", "software development engineer",
+    "swe", "backend engineer", "back end engineer", "backend developer",
+    "frontend engineer", "front end engineer", "full stack", "fullstack",
+    "platform engineer", "infrastructure engineer", "systems software",
+    "kernel engineer", "web engineer", "application engineer", "api engineer",
+    "distributed systems", "software integration engineer",
+    # AI / ML
+    "ai engineer", "ml engineer", "machine learning", "applied scientist",
+    "applied ai", "applied ml", "deep learning", "nlp engineer", "llm",
+    "research engineer", "mlops", "ai analyst", "ai/ml", "ai solutions",
+    "ai operations", "ai product", "computer vision",
+    # Data / analytics
+    "data engineer", "data scientist", "analytics engineer",
+    "business intelligence", "bi engineer", "data analyst",
+    # Go-to-market / customer-facing engineering
+    "gtm engineer", "go-to-market engineer", "go to market engineer",
+    "forward deployed", "solutions engineer", "solutions architect",
+    "sales engineer", "solutions consultant", "customer engineer",
+    # Product
+    "product manager", "product management", "associate product",
+    "product analyst", "product engineer", "technical product",
+)
+
+
+def in_target_family(title: str) -> bool:
+    """True when the title names a role family on the profile."""
+    return any(f in title.lower() for f in TARGET_FAMILIES)
+
+
 #: Explicit new-grad / entry-level markers. These are what he can actually land,
 #: so they outrank a generically-relevant mid-level title.
 NEW_GRAD_TITLES = (
@@ -220,12 +255,21 @@ def heuristic_score(listing: Listing) -> int:
     title = listing.title.lower()
     loc_text = " ".join(listing.locations).lower()
 
-    # Hard excludes.
-    if any(h in title for h in EXCLUDE_TITLE):
-        return 0
+    # Hard excludes. "manager" is a seniority marker everywhere except in
+    # "product manager", which is an individual-contributor product role and
+    # one of the target families.
+    is_product_role = "product manager" in title or "product management" in title
+    for marker in EXCLUDE_TITLE:
+        if marker == "manager" and is_product_role:
+            continue
+        if marker in title:
+            return 0
     if any(lang in title for lang in _FOREIGN_LANGUAGE):
         return 0
     if _SCHOOL_RESTRICTED.search(listing.title):
+        return 0
+    # Whitelist gate: anything outside the target families is not applied to.
+    if not in_target_family(title):
         return 0
     if any(h in loc_text for h in EXCLUDE_LOCATION_HINTS) and not _has_us_location(listing):
         return 0

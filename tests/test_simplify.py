@@ -182,3 +182,31 @@ def test_off_profile_hardware_and_gated_roles_are_excluded():
         "Machine Learning Engineer, New Grad", "GTM Engineer",
     ):
         assert score(t) >= 55, t
+
+
+def test_only_target_role_families_score():
+    """Whitelist: SWE / AI-ML / data / GTM / product only."""
+    def score(title):
+        return simplify.heuristic_score(simplify.Listing(
+            id="x", company_name="A", title=title, url="https://x",
+            locations=["San Francisco, CA"], sponsorship="", category="eng",
+            active=True, is_visible=True, date_posted=None,
+        ))
+
+    for t in (
+        "Software Engineer New Grad", "Software Development Engineer New Grad",
+        "AI Engineer 1", "Machine Learning Engineer, New Grad",
+        "Associate Applied Scientist", "GTM Engineer", "Forward Deployed Engineer",
+        "Associate Product Manager", "Data Engineer - Associate",
+        "Full Stack Software Engineer 1", "Business Intelligence Engineer",
+    ):
+        assert score(t) > 0, t
+
+    for t in (
+        "Hardware Integration Engineer New Grad", "Triage Associate 1",
+        "Operations Engineer - Early Careers", "Device Engineer 1",
+        "Quantitative Associate - Quantitative Research",
+        "Marketing Analytics - Client Services Associate",
+        "Robotics Assistant", "Engineer New Grad", "Associate Engineer",
+    ):
+        assert score(t) == 0, t
