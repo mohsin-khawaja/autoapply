@@ -8,9 +8,19 @@ byte-exact and complete. Drop caveman ONLY for: security warnings, destructive
 or irreversible operations, interface-change proposals.
 
 ## Safety
-- This tool touches LIVE job applications. Never trigger a real Submit —
-  always stop at the review pause. Treat every headed-browser test as prod.
-- Never invent profile facts. profile.yaml is the only source of truth.
+- This tool sends LIVE job applications under the user's name. Submitting is
+  irreversible: a half-filled application burns the posting.
+- Auto-submit is OFF by default and gated twice — the ATS must be in
+  `Settings.auto_submit_allowlist` (env `AUTOAPPLY_AUTO_SUBMIT`, empty unless
+  set) AND the plan must have zero unresolved required fields. Never widen or
+  bypass that gate to raise the submit count; a form short of complete belongs
+  in the manual queue.
+- CAPTCHA fields are never answered — a CAPTCHA is a human check by design.
+  Never fill, generate, or work around one.
+- Never invent profile facts. profile.yaml is the only source of truth. If a
+  field is not in the profile (GPA, citizenship, salary), flag it for the user
+  rather than inferring a plausible value.
+- Treat every headed-browser run as prod.
 
 ## Worktree discipline
 - You may be one of several parallel sessions in separate git worktrees.
@@ -19,6 +29,23 @@ or irreversible operations, interface-change proposals.
   of SPEC.md). Never edit ats/base.py or db.py from a feature branch.
 - Merges happen via PR only. Never push to main. Never merge locally.
 - Conventional Commits, subject ≤ 50 chars.
+
+## Running it (local, no Claude API)
+The whole pipeline is local: SQLite, Playwright, and Ollama for free-text
+answers. Nothing here calls the Claude API.
+
+- `./scripts/autoapply_local.sh --auto` — sync, queue, fill, submit complete
+  forms, skip the rest. Stays in the terminal.
+- `caffeinate -i nohup ./scripts/away_run.sh 180 &` — same, unattended: keeps
+  the Mac awake and survives a closed terminal. Log: `runs/away_run.log`.
+- `uv run autoapply skip <pattern>` — retire queued apps mid-run; the runner
+  re-reads status before each job, so no restart needed.
+- `uv run autoapply dashboard` — http://127.0.0.1:8787, includes the
+  "Finish manually" card for anything needing a human.
+
+Outcomes: `submitted` (proven — confirmation text/url or the form cleared),
+`filled` (submit clicked, unconfirmed), `needs_input` (part filled, human
+needed), `manual` (no fillable form / account-walled portal), `skipped`.
 
 ## Conventions
 - Python 3.11+, uv, ruff, pytest. Type hints everywhere. No f-string logging
