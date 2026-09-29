@@ -26,7 +26,7 @@ class _Job:
 
 
 def _plan(fields, answers=None, resume=Path("/tmp/resume.pdf"), threshold=82):
-    profile = load_profile(REPO / "profile.yaml")
+    profile = load_profile(REPO / "tests" / "fixtures" / "profile.yaml")
     return build_plan(
         fields, profile, answers or _Answers(), _Job(),
         job_url="https://x", ats=ATSKind.GENERIC, resume_path=resume,
@@ -42,9 +42,9 @@ def test_maps_basic_identity_fields():
     ]
     plan = _plan(fields)
     by_key = {fp.field.key: fp for fp in plan.fields}
-    assert by_key["f1"].value == "Mohsin"
-    assert by_key["f2"].value == "mohsinkhawaja10@gmail.com"
-    assert by_key["f3"].value == "510-949-7141"
+    assert by_key["f1"].value == "Test"
+    assert by_key["f2"].value == "test.applicant@example.com"
+    assert by_key["f3"].value == "555-0100"
     assert not plan.unresolved
 
 

@@ -11,11 +11,11 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 def test_profile_yaml_loads():
-    p = load_profile(REPO / "profile.yaml")
-    assert p.identity.first_name == "Mohsin"
-    assert p.identity.last_name == "Khawaja"
-    assert p.identity.email == "mohsinkhawaja10@gmail.com"
-    assert len(p.experience) == 5
+    p = load_profile(REPO / "tests" / "fixtures" / "profile.yaml")
+    assert p.identity.first_name == "Test"
+    assert p.identity.last_name == "Applicant"
+    assert p.identity.email == "test.applicant@example.com"
+    assert len(p.experience) == 2
     assert p.answers.work_authorization_us == "Yes"
     assert p.answers.require_sponsorship == "No"
     assert p.answers.eeo.gender == "Male"
@@ -24,14 +24,14 @@ def test_profile_yaml_loads():
 
 
 def test_dates_are_strings():
-    p = load_profile(REPO / "profile.yaml")
+    p = load_profile(REPO / "tests" / "fixtures" / "profile.yaml")
     # YAML 2021-08 must not become a date object.
     assert isinstance(p.education[0].start, str)
 
 
 def test_resolve_dotted_keys():
-    p = load_profile(REPO / "profile.yaml")
-    assert resolve_profile_value(p, "identity.first_name") == "Mohsin"
+    p = load_profile(REPO / "tests" / "fixtures" / "profile.yaml")
+    assert resolve_profile_value(p, "identity.first_name") == "Test"
     assert resolve_profile_value(p, "answers.require_sponsorship") == "No"
     assert resolve_profile_value(p, "education.0.school").startswith("University of California")
     assert resolve_profile_value(p, "identity.links.github").startswith("https://github.com/")
