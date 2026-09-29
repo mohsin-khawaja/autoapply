@@ -676,3 +676,39 @@ def test_run_skips_a_repost_of_an_already_submitted_role(conn):
     assert _already_submitted(conn, repost) is True
     # The submitted row itself is not considered a duplicate of itself.
     assert jobs.get("first") is None  # it is no longer queued
+
+
+def test_dashboard_prefers_the_database_that_has_applications(tmp_path):
+    """A worktree's own empty .autoapply showed a board with zero applications
+    while the real history sat in a sibling worktree."""
+    import sqlite3
+
+    from autoapply.cli import _find_populated_db
+    from autoapply.config import Settings
+
+    root = tmp_path / "worktrees"
+    empty = root / "checkout-a" / ".autoapply"
+    real = root / "checkout-b" / ".autoapply"
+    for d in (empty, real):
+        d.mkdir(parents=True)
+        c = sqlite3.connect(d / "autoapply.db")
+        c.execute("CREATE TABLE applications (job_id TEXT)")
+        c.commit()
+        c.close()
+    c = sqlite3.connect(real / "autoapply.db")
+    c.execute("INSERT INTO applications VALUES ('j1')")
+    c.commit()
+    c.close()
+
+    s = Settings(home=empty)
+    s.repo_root = root / "checkout-a"
+    assert _find_populated_db(s) == real / "autoapply.db"
+
+
+def test_dashboard_reports_nothing_when_no_database_has_data(tmp_path):
+    from autoapply.cli import _find_populated_db
+    from autoapply.config import Settings
+
+    s = Settings(home=tmp_path / ".autoapply")
+    s.repo_root = tmp_path
+    assert _find_populated_db(s) is None

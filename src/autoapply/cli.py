@@ -559,6 +559,35 @@ def status() -> None:
         console.print(table)
 
 
+
+def _find_populated_db(settings):
+    """Locate an autoapply.db with applications in it, across sibling worktrees.
+
+    Prefers the most recently written. Returns None when nothing qualifies.
+    """
+    import sqlite3
+
+    candidates = {settings.db_path}
+    for sibling in settings.repo_root.parent.glob("*/.autoapply/autoapply.db"):
+        candidates.add(sibling)
+
+    best = None
+    for db_path in candidates:
+        if not db_path.exists():
+            continue
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            n = conn.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
+            conn.close()
+        except sqlite3.Error:
+            continue
+        if n <= 0:
+            continue
+        mtime = db_path.stat().st_mtime
+        if best is None or mtime > best[0]:
+            best = (mtime, db_path)
+    return best[1] if best else None
+
 @app.command()
 def dashboard(
     port: int = typer.Option(8787, "--port", help="Port to serve on (localhost only)."),
@@ -567,9 +596,17 @@ def dashboard(
     from autoapply.dashboard import serve
 
     settings = load_settings()
-    if not settings.db_path.exists():
+    # A git worktree gets its own repo-relative .autoapply. This checkout has a
+    # database of its own but no applications in it, so the dashboard showed an
+    # empty board while the real history sat in a sibling worktree. Pick the
+    # database that actually has applications, not merely the one that exists.
+    found = _find_populated_db(settings)
+    if found is None:
         console.print("[yellow]no database[/] — run `autoapply init` + `autoapply sync` first.")
         raise typer.Exit(1)
+    if found != settings.db_path:
+        console.print(f"[dim]using database at {found}[/]")
+        settings.home = found.parent
     console.print(f"[green]dashboard[/] http://127.0.0.1:{port}  (Ctrl-C to stop)")
     serve(settings.db_path, port=port)
 
