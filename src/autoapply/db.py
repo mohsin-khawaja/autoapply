@@ -64,9 +64,15 @@ CREATE INDEX IF NOT EXISTS idx_jobs_score ON jobs(score DESC);
 CREATE INDEX IF NOT EXISTS idx_apps_status ON applications(status);
 """
 
-#: Valid application statuses (SPEC.md §6).
+#: Valid application statuses (SPEC.md §6; WaaS states added by workstream E).
+#: ``messaged``/``deferred``/``replied`` support the WaaS message flow
+#: (waas-addendum.md E3): a founder message was sent, deferred on a rate/CAPTCHA
+#: signal, or a reply was received.
 APP_STATUSES = frozenset(
-    {"queued", "filled", "needs_input", "submitted", "failed", "manual", "skipped"}
+    {
+        "queued", "filled", "needs_input", "submitted", "failed", "manual", "skipped",
+        "messaged", "deferred", "replied",
+    }
 )
 
 
@@ -265,6 +271,24 @@ def application_status(conn: sqlite3.Connection, job_id: str) -> str | None:
     """Return the current application status for ``job_id`` or None if not tracked."""
     row = conn.execute("SELECT status FROM applications WHERE job_id = ?", (job_id,)).fetchone()
     return row["status"] if row else None
+
+
+def list_followups(conn: sqlite3.Connection, *, before_iso: str) -> list[sqlite3.Row]:
+    """Return messaged applications with no reply, sent before ``before_iso``.
+
+    Supports the WaaS followups view (waas-addendum.md E3): companies messaged
+    more than N days ago with no reply flag. A ``replied`` status excludes a row
+    naturally (only ``messaged`` rows match). ``before_iso`` is the cutoff the
+    caller computes (now minus N days), so this stays pure/testable.
+    """
+    return conn.execute(
+        """SELECT a.job_id, a.submitted_at, j.company_name, j.title
+           FROM applications a JOIN jobs j ON j.id = a.job_id
+           WHERE a.status = 'messaged' AND a.submitted_at IS NOT NULL
+             AND a.submitted_at < ?
+           ORDER BY a.submitted_at ASC""",
+        (before_iso,),
+    ).fetchall()
 
 
 # ---- answers cache --------------------------------------------------------
