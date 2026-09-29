@@ -117,6 +117,25 @@ EXCLUDE_TITLE = (
     "translator", "translation", "bilingual", "language specialist",
     "content evaluator", "evaluator", "freelance", "contractor", "part-time",
     "fluency", "native speaker",
+    # Hardware / test / ops roles. The profile is AI-ML and backend software;
+    # these do not convert and crowd out roles that would.
+    "fpga", "asic", "verilog", "rtl ", "pcb", "firmware", "embedded hardware",
+    "hil ", "hardware-in-the-loop", "automotive", "mechanical", "electrical",
+    "manufacturing", "field service", "test engineer", "qa engineer",
+    "quality engineer", "validation engineer", "operator", "support engineer",
+    "technical support", "help desk", "desktop support", "it support",
+    # PhD-gated research posts.
+    "research scientist", "postdoctoral", "post-doctoral", "postdoc",
+    "quantitative researcher", "quant researcher",
+)
+
+#: Postings restricted to a specific school's students. UCSD is the only one on
+#: the profile, so anything naming another university is an automatic reject.
+_SCHOOL_RESTRICTED = re.compile(
+    r"\b(uf|ufl|usc|ucla|uc davis|uc irvine|berkeley|stanford|mit|gatech|"
+    r"georgia tech|purdue|rit|asu|byu|osu|psu|uiuc|umich|utexas|ut austin)\b"
+    r"[^a-z]{0,12}(only|students?|affiliat|exclusive)",
+    re.I,
 )
 
 #: Languages other than English appearing in a title mean the role is gated on
@@ -205,6 +224,8 @@ def heuristic_score(listing: Listing) -> int:
     if any(h in title for h in EXCLUDE_TITLE):
         return 0
     if any(lang in title for lang in _FOREIGN_LANGUAGE):
+        return 0
+    if _SCHOOL_RESTRICTED.search(listing.title):
         return 0
     if any(h in loc_text for h in EXCLUDE_LOCATION_HINTS) and not _has_us_location(listing):
         return 0

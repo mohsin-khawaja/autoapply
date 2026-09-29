@@ -152,3 +152,33 @@ def test_language_gated_and_gig_training_roles_are_excluded():
     # Real target roles are untouched.
     for t in ("AI Engineer", "GTM Engineer", "Machine Learning Engineer, New Grad"):
         assert score(t) >= 55, t
+
+
+def test_off_profile_hardware_and_gated_roles_are_excluded():
+    """Submitted-but-unwinnable roles seen live: these do not convert."""
+    def score(title):
+        return simplify.heuristic_score(simplify.Listing(
+            id="x", company_name="A", title=title, url="https://x",
+            locations=["San Francisco, CA"], sponsorship="", category="eng",
+            active=True, is_visible=True, date_posted=None,
+        ))
+
+    for t in (
+        "FPGA Associate",
+        "HiL Test Engineer - Automotive",
+        "Data Collection Operator 1",
+        "Associate Software Support Engineer",
+        "Research Scientist - Information Theory",
+        "Postdoctoral Scholar",
+        "Quantitative Researcher - Single Stock",
+        "Associate Software Engineer - UF Only",
+        "Software Engineer - Berkeley students only",
+    ):
+        assert score(t) == 0, t
+
+    # The roles that actually fit stay high.
+    for t in (
+        "Software Engineer New Grad", "AI Engineer", "Associate Applied Scientist",
+        "Machine Learning Engineer, New Grad", "GTM Engineer",
+    ):
+        assert score(t) >= 55, t
