@@ -34,9 +34,49 @@ def test_score_high_title_high_location(feed_listings):
 
 
 def test_score_medium_title_medium_location(feed_listings):
+    """"Software Engineer I" is entry level, so the new-grad boost applies."""
     swe = simplify.Listing.from_feed(feed_listings[1])  # SWE I, NYC
     score = simplify.heuristic_score(swe)
-    assert 40 <= score < 80, score
+    assert score >= 70, score
+
+
+def test_entry_level_outranks_an_equally_relevant_mid_level_title():
+    """The whole point: a new-grad req must beat a plain mid-level one."""
+
+    def listing(title: str) -> simplify.Listing:
+        return simplify.Listing(
+            id="x", company_name="Acme", title=title, url="https://x",
+            locations=["San Francisco, CA"], sponsorship="", category="eng",
+            active=True, is_visible=True, date_posted=None,
+        )
+
+    new_grad = simplify.heuristic_score(listing("Machine Learning Engineer, New Grad"))
+    mid = simplify.heuristic_score(listing("Machine Learning Engineer"))
+    assert new_grad > mid, (new_grad, mid)
+
+
+def test_score_excludes_out_of_reach_levels():
+    """Levels above new grad must be hard zeros, not merely downranked."""
+
+    def score(title: str) -> int:
+        return simplify.heuristic_score(
+            simplify.Listing(
+                id="x", company_name="Acme", title=title, url="https://x",
+                locations=["San Francisco, CA"], sponsorship="", category="eng",
+                active=True, is_visible=True, date_posted=None,
+            )
+        )
+
+    for title in (
+        "Sr. Software Engineer", "Staff ML Engineer", "Principal Engineer",
+        "Software Engineer III", "Software Engineer II", "Head of Engineering",
+        "Engineering Manager", "Software Architect", "Distinguished Engineer",
+        "ML Engineer (5+ years)", "Software Engineering Intern",
+    ):
+        assert score(title) == 0, title
+    # ...while genuine entry-level titles survive.
+    for title in ("Software Engineer I", "New Grad Software Engineer", "Junior ML Engineer"):
+        assert score(title) >= 70, title
 
 
 def test_score_excludes_senior(feed_listings):
@@ -57,3 +97,116 @@ def test_score_inactive_is_zero(feed_listings):
 def test_resolve_redirect_noop_for_direct_url():
     url = "https://jobs.ashbyhq.com/acme/abc"
     assert simplify.resolve_redirect(url) == url
+
+
+def test_gtm_and_bi_engineer_are_target_titles():
+    def score(title):
+        return simplify.heuristic_score(simplify.Listing(
+            id="x", company_name="A", title=title, url="https://x",
+            locations=["San Francisco, CA"], sponsorship="", category="eng",
+            active=True, is_visible=True, date_posted=None,
+        ))
+    titles = (
+        "GTM Engineer", "Go-To-Market Engineer",
+        "Business Intelligence Engineer", "BI Engineer",
+    )
+    for t in titles:
+        assert score(t) >= 70, t
+
+
+def test_data_labeling_gigs_are_excluded():
+    def score(title):
+        return simplify.heuristic_score(simplify.Listing(
+            id="x", company_name="A", title=title, url="https://x",
+            locations=["Remote"], sponsorship="", category="eng",
+            active=True, is_visible=True, date_posted=None,
+        ))
+    for t in (
+        "Data Labeling Analyst - Speech & Voice AI - Swedish Speaker",
+        "AI Data Annotator", "Search Quality Rater",
+    ):
+        assert score(t) == 0, t
+    assert score("AI Analyst") >= 70
+
+
+def test_language_gated_and_gig_training_roles_are_excluded():
+    """"AI Trainer - Bosnian" is gated on a language not on the profile."""
+    def score(title):
+        return simplify.heuristic_score(simplify.Listing(
+            id="x", company_name="A", title=title, url="https://x",
+            locations=["Remote"], sponsorship="", category="eng",
+            active=True, is_visible=True, date_posted=None,
+        ))
+
+    for t in (
+        "AI Trainer - Bosnian",
+        "AI Trainer - Advanced Indonesian Fluency",
+        "AI Trainer",
+        "Content Evaluator - Bilingual, Vietnamese and English",
+        "French Language Specialist - Freelance AI Trainer",
+        "PreK to K Math Teacher",
+        "Spanish Translator",
+    ):
+        assert score(t) == 0, t
+
+    # Real target roles are untouched.
+    for t in ("AI Engineer", "GTM Engineer", "Machine Learning Engineer, New Grad"):
+        assert score(t) >= 55, t
+
+
+def test_off_profile_hardware_and_gated_roles_are_excluded():
+    """Submitted-but-unwinnable roles seen live: these do not convert."""
+    def score(title):
+        return simplify.heuristic_score(simplify.Listing(
+            id="x", company_name="A", title=title, url="https://x",
+            locations=["San Francisco, CA"], sponsorship="", category="eng",
+            active=True, is_visible=True, date_posted=None,
+        ))
+
+    for t in (
+        "FPGA Associate",
+        "HiL Test Engineer - Automotive",
+        "Data Collection Operator 1",
+        "Associate Software Support Engineer",
+        "Research Scientist - Information Theory",
+        "Postdoctoral Scholar",
+        "Quantitative Researcher - Single Stock",
+        "Associate Software Engineer - UF Only",
+        "Software Engineer - Berkeley students only",
+    ):
+        assert score(t) == 0, t
+
+    # The roles that actually fit stay high.
+    for t in (
+        "Software Engineer New Grad", "AI Engineer", "Associate Applied Scientist",
+        "Machine Learning Engineer, New Grad", "GTM Engineer",
+    ):
+        assert score(t) >= 55, t
+
+
+def test_only_target_role_families_score():
+    """Whitelist: SWE / AI-ML / data / GTM / product only."""
+    def score(title):
+        return simplify.heuristic_score(simplify.Listing(
+            id="x", company_name="A", title=title, url="https://x",
+            locations=["San Francisco, CA"], sponsorship="", category="eng",
+            active=True, is_visible=True, date_posted=None,
+        ))
+
+    for t in (
+        "Software Engineer New Grad", "Software Development Engineer New Grad",
+        "AI Engineer 1", "Machine Learning Engineer, New Grad",
+        "Associate Applied Scientist", "GTM Engineer", "Forward Deployed Engineer",
+        "Associate Product Manager", "Data Engineer - Associate",
+        "Full Stack Software Engineer 1", "Business Intelligence Engineer",
+    ):
+        assert score(t) > 0, t
+
+    for t in (
+        "Hardware Integration Engineer New Grad", "Triage Associate 1",
+        "Operations Engineer - Early Careers", "Device Engineer 1",
+        "Quantitative Associate - Quantitative Research",
+        "Marketing Analytics - Client Services Associate",
+        "Robotics Assistant", "Engineer New Grad", "Associate Engineer",
+    ):
+        assert score(t) == 0, t

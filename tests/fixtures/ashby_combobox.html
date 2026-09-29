@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head><title>Acme AI — Combobox form</title>
+<style>
+  ._fieldEntry_x1 { margin: 8px 0; }
+  #location-listbox { border: 1px solid #ccc; }
+  #location-listbox[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div class="ashby-application">
+  <section class="_section_ab1">
+    <h2 class="_sectionTitle_ab1">Application</h2>
+    <div class="_fieldEntry_x1">
+      <label for="location">Preferred location <span class="_required_z">*</span></label>
+      <input id="location" name="location" type="text" role="combobox"
+             aria-haspopup="listbox" aria-expanded="false" aria-required="true"
+             autocomplete="off">
+      <div id="location-listbox" role="listbox" hidden></div>
+    </div>
+    <div class="_fieldEntry_x1">
+      <label for="fullname">Full name</label>
+      <input id="fullname" name="fullname" type="text">
+    </div>
+    <button type="submit" id="submit-btn" onclick="window.__submitted = true">Submit</button>
+  </section>
+</div>
+<script>
+window.__submitted = false;
+const ALL = ['San Francisco, CA', 'New York, NY', 'Austin, TX', 'Remote (US)'];
+const input = document.getElementById('location');
+const listbox = document.getElementById('location-listbox');
+
+function render(filter) {
+  listbox.innerHTML = '';
+  const f = (filter || '').toLowerCase();
+  for (const opt of ALL.filter(o => o.toLowerCase().includes(f))) {
+    const div = document.createElement('div');
+    div.setAttribute('role', 'option');
+    div.textContent = opt;
+    div.addEventListener('click', () => {
+      input.value = opt;
+      close();
+    });
+    listbox.appendChild(div);
+  }
+  listbox.hidden = false;
+  input.setAttribute('aria-expanded', 'true');
+}
+function close() {
+  listbox.hidden = true;
+  listbox.innerHTML = '';
+  input.setAttribute('aria-expanded', 'false');
+}
+input.addEventListener('click', () => render(input.value));
+input.addEventListener('input', () => render(input.value));
+input.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+</script>
+</body>
+</html>

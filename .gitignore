@@ -1,15 +1,28 @@
-.venv/
-__pycache__/
-*.pyc
+# Private applicant data — never commit. Root-anchored so the synthetic test
+# fixture (tests/fixtures/profile.yaml) is still tracked.
+/profile.yaml
+
+# Local runtime state. browser_data is a real Chrome profile holding cookies
+# and logged-in sessions for job sites; autoapply.db holds application history.
+.autoapply/
+browser_data/
 *.db
 *.db-journal
 *.db-wal
+*.sqlite
+
+# Run artifacts (logs, screenshots) and the resume drop.
 runs/*
 !runs/.gitkeep
-browser_data/
 assets/*
 !assets/.gitkeep
-.autoapply/
+
+# Secrets
+.env
+
+# Tooling
+__pycache__/
+*.pyc
 .ruff_cache/
 .pytest_cache/
 .DS_Store

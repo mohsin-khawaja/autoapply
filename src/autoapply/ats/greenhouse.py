@@ -1,0 +1,462 @@
+"""Greenhouse ATS adapter (workstream A, SPEC.md §9).
+
+Handles both the classic ``boards.greenhouse.io`` embedded forms and the newer
+React-based ``job-boards.greenhouse.io`` UI. Registers itself at import time via
+:func:`autoapply.ats.base.register`.
+
+SAFETY: :meth:`GreenhouseAdapter.fill` never clicks Submit. It fills mapped
+fields, uploads the resume to file inputs, and red-outlines ``needs_input``
+fields for the human.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import TYPE_CHECKING
+from urllib.parse import urlparse
+
+from autoapply.ats import base
+from autoapply.ats.base import ATSKind, FieldPlan, FillPlan, FillResult, FormField
+from autoapply.browser import flag_field
+
+if TYPE_CHECKING:  # pragma: no cover - hints only
+    from playwright.sync_api import Locator, Page
+
+_GREENHOUSE_HOSTS = ("boards.greenhouse.io", "job-boards.greenhouse.io")
+
+#: JS that walks the application form and returns raw field descriptors.
+_EXTRACT_JS = """
+() => {
+  const form =
+    document.querySelector('#application-form') ||
+    document.querySelector('#application_form') ||
+    document.querySelector('form[action*="greenhouse"]') ||
+    document.querySelector('form');
+  if (!form) return [];
+
+  const results = [];
+  const seenRadioGroups = new Set();
+
+  const labelTextFor = (el) => {
+    let text = '';
+    if (el.id) {
+      const lab = form.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      if (lab) text = lab.textContent;
+    }
+    if (!text) {
+      const wrap = el.closest('label');
+      if (wrap) text = wrap.textContent;
+    }
+    if (!text) text = el.getAttribute('aria-label') || '';
+    if (!text) {
+      const labelledBy = el.getAttribute('aria-labelledby');
+      if (labelledBy) {
+        text = labelledBy
+          .split(/\\s+/)
+          .map((id) => (document.getElementById(id) || {}).textContent || '')
+          .join(' ');
+      }
+    }
+    if (!text) text = el.getAttribute('placeholder') || '';
+    return text.replace(/\\s+/g, ' ').trim();
+  };
+
+  const isRequired = (el, label) =>
+    el.required ||
+    el.getAttribute('aria-required') === 'true' ||
+    /[*✱]\\s*$/.test(label);
+
+  const groupOf = (el) => {
+    const fs = el.closest('fieldset');
+    if (fs) {
+      const leg = fs.querySelector('legend');
+      if (leg) return leg.textContent.replace(/\\s+/g, ' ').trim();
+    }
+    const sec = el.closest('section[aria-label], [data-section-title]');
+    if (sec)
+      return (
+        sec.getAttribute('aria-label') ||
+        sec.getAttribute('data-section-title') ||
+        null
+      );
+    return null;
+  };
+
+  const attrsOf = (el) => {
+    const out = {};
+    for (const a of ['id', 'data-testid', 'placeholder', 'aria-describedby', 'autocomplete'])
+      if (el.getAttribute(a)) out[a] = el.getAttribute(a);
+    for (const a of el.attributes) if (a.name.startsWith('aria-')) out[a.name] = a.value;
+    return out;
+  };
+
+  const els = form.querySelectorAll('input, textarea, select');
+  for (const el of els) {
+    const tag = el.tagName.toLowerCase();
+    const type = (el.getAttribute('type') || '').toLowerCase();
+    if (['hidden', 'submit', 'button', 'image', 'reset'].includes(type)) continue;
+    // intl-tel-input internals (phone country search) are widget chrome, not questions
+    if ((el.id || '').startsWith('iti-')) continue;
+    if (el.disabled) continue;
+
+    const label = labelTextFor(el);
+    let fieldType;
+    let options = [];
+    let key = el.id || el.name || '';
+
+    if (tag === 'select') {
+      fieldType = el.multiple ? 'multiselect' : 'select';
+      options = Array.from(el.options)
+        .filter((o) => o.value !== '')
+        .map((o) => o.textContent.replace(/\\s+/g, ' ').trim());
+    } else if (tag === 'textarea') {
+      fieldType = 'textarea';
+    } else if (type === 'file') {
+      fieldType = 'file';
+    } else if (type === 'radio' || type === 'checkbox') {
+      const name = el.name || el.id;
+      if (type === 'radio') {
+        if (seenRadioGroups.has(name)) continue;
+        seenRadioGroups.add(name);
+        fieldType = 'radio';
+        options = Array.from(
+          form.querySelectorAll(`input[type="radio"][name="${CSS.escape(name)}"]`)
+        ).map((r) => labelTextFor(r));
+        // group label: fieldset legend or aria-labelledby of the group
+        const fs = el.closest('fieldset');
+        const legend = fs && fs.querySelector('legend');
+        results.push({
+          key: name,
+          fieldType,
+          label: legend ? legend.textContent.replace(/\\s+/g, ' ').trim() : label,
+          selector: `input[type="radio"][name="${name}"]`,
+          name,
+          required: isRequired(el, label),
+          options,
+          autocomplete: el.getAttribute('autocomplete'),
+          group: groupOf(el),
+          attrs: attrsOf(el),
+        });
+        continue;
+      }
+      fieldType = 'checkbox';
+    } else if (
+      el.getAttribute('role') === 'combobox' ||
+      (el.closest('[class*="select__"]') && tag === 'input')
+    ) {
+      fieldType = 'combobox';
+      const listId = el.getAttribute('aria-controls') || el.getAttribute('aria-owns');
+      const container = el.closest('[class*="select"], [data-options]');
+      if (container && container.getAttribute('data-options')) {
+        try { options = JSON.parse(container.getAttribute('data-options')); } catch (e) {}
+      }
+      if (!options.length && listId) {
+        const list = document.getElementById(listId);
+        if (list)
+          options = Array.from(list.querySelectorAll('[role="option"], li')).map((o) =>
+            o.textContent.replace(/\\s+/g, ' ').trim()
+          );
+      }
+    } else if (type === 'email') {
+      fieldType = 'email';
+    } else if (type === 'tel') {
+      fieldType = 'tel';
+    } else if (type === 'date') {
+      fieldType = 'date';
+    } else if (type === '' || type === 'text' || type === 'search' || type === 'number') {
+      fieldType = 'text';
+    } else {
+      fieldType = 'unknown';
+    }
+
+    const selector = el.id
+      ? `#${CSS.escape(el.id)}`
+      : el.name
+        ? `${tag}[name="${el.name}"]`
+        : null;
+    if (!selector) continue;
+    if (!key) key = selector;
+
+    results.push({
+      key,
+      fieldType,
+      label,
+      selector,
+      name: el.name || null,
+      required: isRequired(el, label),
+      options,
+      autocomplete: el.getAttribute('autocomplete'),
+      group: groupOf(el),
+      attrs: attrsOf(el),
+    });
+  }
+  return results;
+}
+"""
+
+
+
+
+#: A phone country picker's options ("Isle of Man+44", "United States+1").
+_DIAL_CODE = re.compile(r"\+\d{1,4}$")
+
+
+def _is_phone_country_list(options: list[str]) -> bool:
+    """True when the options are dial codes, not answers to the visible question.
+
+    Greenhouse renders its phone country picker as a sibling combobox. When its
+    listbox was read for another field, "School" was filled with
+    "Isle of Man+44". Dial codes are never a valid answer to a form question,
+    so such a list is discarded rather than attached.
+    """
+    if len(options) < 3:
+        return False
+    hits = sum(1 for o in options if _DIAL_CODE.search(o))
+    return hits >= max(2, len(options) // 3)
+
+def _hydrate_combobox_options(page: Page, fields: list[FormField]) -> None:
+    """Open closed react-select comboboxes to read their options.
+
+    Greenhouse renders a combobox's listbox only while it is open, so the DOM
+    pass sees an empty option list. With no options the mapper could neither
+    match a profile value nor hand the field to the LLM, and every form with a
+    "Yes/No" combobox stalled at needs_input. Each open attempt is bounded and
+    isolated; a widget that will not open is simply left as-is.
+    """
+    for f in fields:
+        if f.field_type != "combobox" or f.options:
+            continue
+        try:
+            loc = page.locator(f.selector).first
+            # Scope to THIS widget's listbox. A global [role=option] query
+            # returns whatever listbox happens to be open — a phone country
+            # picker filled a "School" field with "Isle of Man+44".
+            list_id = loc.get_attribute("aria-controls") or loc.get_attribute("aria-owns")
+            loc.click(timeout=1_500)
+            page.wait_for_timeout(250)
+            list_id = list_id or (
+                loc.get_attribute("aria-controls") or loc.get_attribute("aria-owns")
+            )
+            if not list_id:
+                page.keyboard.press("Escape")
+                continue  # no owned listbox => cannot attribute options safely
+            opts = page.locator(f"#{list_id} [role='option'], #{list_id} li").all_text_contents()
+            cleaned = [" ".join(o.split()) for o in opts if o and o.strip()]
+            if not _is_phone_country_list(cleaned):
+                f.options = cleaned
+            page.keyboard.press("Escape")
+        except Exception:  # noqa: BLE001 - one stuck widget must not fail extraction
+            try:
+                page.keyboard.press("Escape")
+            except Exception:  # noqa: BLE001
+                pass
+
+class GreenhouseAdapter(base.BaseAdapter):
+    """Adapter for Greenhouse job boards (classic and React job-boards UI)."""
+
+    kind = ATSKind.GREENHOUSE
+
+    @classmethod
+    def detect(cls, url: str) -> bool:
+        """True for boards.greenhouse.io / job-boards.greenhouse.io / *.greenhouse.io."""
+        try:
+            host = (urlparse(url).hostname or "").lower()
+        except ValueError:
+            return False
+        return host in _GREENHOUSE_HOSTS or host.endswith(".greenhouse.io")
+
+    def extract_form(self, page: Page) -> list[FormField]:
+        """Discover fillable fields on the loaded Greenhouse application page."""
+        raw: list[dict] = page.evaluate(_EXTRACT_JS)
+        fields: list[FormField] = []
+        seen: set[str] = set()
+        for r in raw:
+            key = r["key"]
+            if key in seen:
+                key = f"{key}:{len(fields)}"
+            seen.add(key)
+            fields.append(
+                FormField(
+                    key=key,
+                    field_type=r["fieldType"],
+                    label=r["label"],
+                    selector=r["selector"],
+                    name=r.get("name"),
+                    required=bool(r.get("required")),
+                    options=[o for o in r.get("options", []) if o],
+                    autocomplete=r.get("autocomplete"),
+                    group=r.get("group"),
+                    attrs=r.get("attrs") or {},
+                )
+            )
+        _hydrate_combobox_options(page, fields)
+        return fields
+
+    def fill(self, page: Page, plan: FillPlan) -> FillResult:
+        """Fill planned fields, upload resume, flag needs_input. Never submits."""
+        filled = 0
+        flagged: list[str] = []
+        # File uploads last: greenhouse's autofill-from-resume re-renders the
+        # form after upload and clobbers fields mid-type if filled after it.
+        ordered = [fp for fp in plan.fields if fp.field.field_type != "file"]
+        ordered += [fp for fp in plan.fields if fp.field.field_type == "file"]
+        for fp in ordered:
+            if fp.needs_input or fp.source == "unmapped":
+                self._flag(page, fp)
+                flagged.append(fp.field.label or fp.field.key)
+                continue
+            try:
+                if self._fill_one(page, fp, plan):
+                    filled += 1
+            except Exception as exc:  # noqa: BLE001 - flag this field, keep filling the rest
+                fp.needs_input = True
+                fp.note = f"fill error: {type(exc).__name__}"
+                self._flag(page, fp)
+                flagged.append(fp.field.label or fp.field.key)
+
+        required_unresolved = [
+            fp.field.label or fp.field.key
+            for fp in plan.fields
+            if fp.field.required and (fp.needs_input or fp.source == "unmapped")
+        ]
+        status = "needs_input" if required_unresolved else "filled"
+        return FillResult(
+            status=status,
+            filled_count=filled,
+            needs_input_labels=flagged,
+            notes=f"greenhouse: filled {filled}, flagged {len(flagged)}",
+        )
+
+    # ---- internals ----
+
+    def _flag(self, page: Page, fp: FieldPlan) -> None:
+        try:
+            flag_field(page, fp.field.selector)
+        except Exception:  # noqa: BLE001 - flagging is best-effort
+            pass
+
+    def _fill_one(self, page: Page, fp: FieldPlan, plan: FillPlan) -> bool:
+        field = fp.field
+        ftype = field.field_type
+
+        if ftype == "file":
+            path = fp.value if fp.value is not None else plan.resume_path
+            if path is None:
+                return False
+            page.set_input_files(field.selector, str(path))
+            # Resume upload triggers autofill-from-resume: the form re-renders
+            # while later fields are being typed into. Let it settle first.
+            try:
+                page.wait_for_load_state("networkidle", timeout=10_000)
+            except Exception:  # noqa: BLE001 - busy pages never go idle
+                pass
+            page.wait_for_timeout(1_500)
+            return True
+
+        if fp.value is None:
+            return False
+        value = fp.value
+
+        if ftype in ("select", "multiselect"):
+            labels = value if isinstance(value, list) else [str(value)]
+            page.select_option(field.selector, label=labels)
+            return True
+
+        if ftype == "combobox":
+            return self._fill_combobox(page, field.selector, str(value))
+
+        if ftype == "radio":
+            self._check_radio(page, field, str(value))
+            return True
+
+        if ftype == "checkbox":
+            loc = page.locator(field.selector)
+            if str(value).lower() in ("true", "yes", "1", "on"):
+                loc.check()
+            else:
+                loc.uncheck()
+            return True
+
+        # text / email / tel / textarea / date / unknown
+        page.fill(field.selector, str(value))
+        return True
+
+    def _fill_combobox(self, page: Page, selector: str, value: str) -> bool:
+        """Open the listbox; pick directly when options are static, else type-ahead.
+
+        Yes/No style comboboxes show their options on click and don't filter as
+        you type (typing can even close them), so try click-and-pick before any
+        typing. Lists also disagree on canonical spellings ("UC San Diego" /
+        "University of California, San Diego"), so every VALUE_ALIASES variant
+        is tried before giving up. Never pick an option the typed text didn't
+        select — a wrong School is worse than a flagged one.
+        """
+        from autoapply.filling.synonyms import VALUE_ALIASES
+
+        loc = page.locator(selector)
+        loc.click()
+        # Scope option lookups to THIS combobox's listbox (aria-controls);
+        # other widgets (the phone country list) keep [role=option] nodes
+        # mounted globally and pollute unscoped queries.
+        listbox_id = loc.get_attribute("aria-controls") or loc.get_attribute("aria-owns")
+        scope = page.locator(f"#{listbox_id}") if listbox_id else page
+        exact = scope.get_by_role("option", name=value, exact=True).first
+        try:
+            exact.wait_for(state="visible", timeout=1500)
+            exact.click()
+            return True
+        except Exception:  # noqa: BLE001 - not a static list (or no exact match)
+            pass
+
+        head = value.split(":")[0].strip()
+        candidates = [value, value.replace(",", ""), value.replace(", ", " - "), head]
+        candidates += list(VALUE_ALIASES.get(value.strip().lower(), ()))
+        seen: set[str] = set()
+        for cand in candidates:
+            if cand.lower() in seen:
+                continue
+            seen.add(cand.lower())
+            loc.fill("")
+            loc.type(cand, delay=10)
+            option = scope.locator('[role="option"]', has_text=cand).first
+            try:
+                option.wait_for(state="visible", timeout=3500)
+                option.click()
+                return True
+            except Exception:  # noqa: BLE001 - try the next spelling
+                continue
+        raise TimeoutError(f"no option matched any spelling of {value!r}")
+
+    def _check_radio(self, page: Page, field: FormField, value: str) -> None:
+        """Check the radio in the group whose label matches ``value``."""
+        radios = page.locator(field.selector)
+        count = radios.count()
+        want = value.strip().lower()
+        for i in range(count):
+            radio = radios.nth(i)
+            label = self._radio_label(page, radio)
+            if label.strip().lower() == want:
+                radio.check()
+                return
+        # fall back to matching input value attribute
+        for i in range(count):
+            radio = radios.nth(i)
+            if (radio.get_attribute("value") or "").strip().lower() == want:
+                radio.check()
+                return
+        raise ValueError(f"no radio option matching {value!r} for {field.key}")
+
+    def _radio_label(self, page: Page, radio: Locator) -> str:
+        return radio.evaluate(
+            """el => {
+                 if (el.id) {
+                   const lab = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+                   if (lab) return lab.textContent;
+                 }
+                 const wrap = el.closest('label');
+                 return wrap ? wrap.textContent : '';
+               }"""
+        )
+
+
+base.register(GreenhouseAdapter)

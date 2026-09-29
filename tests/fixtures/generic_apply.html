@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head><title>Careers at ExampleCorp</title></head>
+<body>
+<nav>
+  <form role="search" action="/search">
+    <input type="search" name="q" placeholder="Search jobs">
+  </form>
+</nav>
+<main>
+  <h1>Apply: Software Engineer</h1>
+  <form id="apply" method="post" action="/careers/apply">
+    <input type="hidden" name="job_ref" value="SE-42">
+    <div>
+      <label for="fname">First name</label>
+      <input type="text" id="fname" name="first_name" autocomplete="given-name" required>
+    </div>
+    <div>
+      <label for="lname">Last name</label>
+      <input type="text" id="lname" name="last_name" autocomplete="family-name" required>
+    </div>
+    <div>
+      <label for="mail">Email address</label>
+      <input type="email" id="mail" name="email" required>
+    </div>
+    <div>
+      <input type="text" name="pronouns" aria-label="Pronouns">
+    </div>
+    <div>
+      <label for="cover">Cover letter</label>
+      <textarea id="cover" name="cover_letter"></textarea>
+    </div>
+    <div>
+      <label for="src">How did you hear about us?</label>
+      <select id="src" name="source">
+        <option value=""></option>
+        <option value="li">LinkedIn</option>
+        <option value="friend">Friend</option>
+      </select>
+    </div>
+    <div>
+      <label for="cv">Resume</label>
+      <input type="file" id="cv" name="resume">
+    </div>
+    <input type="text" name="honeypot" style="display:none">
+    <button type="submit" id="btn-submit"
+            onclick="document.body.setAttribute('data-submitted', 'yes')">
+      Submit
+    </button>
+  </form>
+</main>
+</body>
+</html>

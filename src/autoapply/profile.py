@@ -28,9 +28,14 @@ class Links(BaseModel):
     linkedin: str = ""
     website: str = ""
     github: str = ""
+    twitter: str = ""  # X / Twitter profile URL
 
 
 class Identity(BaseModel):
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}".strip()
+
     model_config = ConfigDict(extra="forbid")
     first_name: str
     last_name: str
@@ -50,6 +55,38 @@ class Education(BaseModel):
     start: str = ""
     end: str = ""
     gpa: str = ""
+
+    # Derived date parts for ATS month/year sub-fields ("YYYY-MM" -> parts).
+    @property
+    def start_year(self) -> str:
+        return self.start.split("-")[0] if self.start else ""
+
+    @property
+    def start_month(self) -> str:
+        return _month_name(self.start)
+
+    @property
+    def end_year(self) -> str:
+        return self.end.split("-")[0] if self.end else ""
+
+    @property
+    def end_month(self) -> str:
+        return _month_name(self.end)
+
+
+_MONTHS = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+
+def _month_name(ym: str) -> str:
+    """"2021-08" -> "August"; empty/uparseable -> ""."""
+    parts = ym.split("-")
+    if len(parts) < 2 or not parts[1].isdigit():
+        return ""
+    m = int(parts[1])
+    return _MONTHS[m - 1] if 1 <= m <= 12 else ""
 
 
 class Experience(BaseModel):
@@ -86,8 +123,11 @@ class EEO(BaseModel):
     model_config = ConfigDict(extra="forbid")
     gender: str = "decline"
     race: str = "decline"
+    hispanic_latino: str = "decline"  # separate US EEO question from race
     veteran: str = "I am not a protected veteran"
     disability: str = "I do not want to answer"
+    orientation: str = "decline"
+    transgender: str = "decline"
 
 
 class Answers(BaseModel):
@@ -104,6 +144,14 @@ class Answers(BaseModel):
     salary_expectation: str = ""
     how_did_you_hear: str = ""
     previously_employed_here: str = "No"
+    # Standard ADA screener ("can you perform the essential functions of this
+    # role, with or without reasonable accommodation?"). Yours to change.
+    can_perform_essential_functions: str = "Yes"
+    citizenship_status: str = "U.S. Citizen"
+    pronouns: str = ""
+    english_proficiency: str = ""
+    # Consent to recruiter follow-up texts. Some forms make this required.
+    sms_consent: str = "No"
     criminal_record_disclosures: str = "decline_unless_required"
     security_clearance: str = "No"
     eeo: EEO = Field(default_factory=EEO)

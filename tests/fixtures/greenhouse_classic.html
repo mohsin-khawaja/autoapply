@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head><title>Software Engineer I - Globex</title></head>
+<body>
+<h1>Software Engineer I</h1>
+<form id="application_form" action="https://boards.greenhouse.io/globex/jobs/123#application_form" method="post">
+  <div>
+    <label for="first_name">First Name *</label>
+    <input type="text" id="first_name" name="job_application[first_name]" autocomplete="given-name" aria-required="true">
+  </div>
+  <div>
+    <label for="last_name">Last Name *</label>
+    <input type="text" id="last_name" name="job_application[last_name]" autocomplete="family-name" aria-required="true">
+  </div>
+  <div>
+    <label for="email">Email *</label>
+    <input type="email" id="email" name="job_application[email]" autocomplete="email" required>
+  </div>
+  <div>
+    <label for="phone">Phone</label>
+    <input type="tel" id="phone" name="job_application[phone]" autocomplete="tel">
+  </div>
+  <div>
+    <label for="resume">Resume/CV *</label>
+    <input type="file" id="resume" name="job_application[resume]" aria-required="true">
+  </div>
+  <div>
+    <label for="job_application_answers_attributes_0_text_value">Why do you want to work at Globex? *</label>
+    <textarea id="job_application_answers_attributes_0_text_value"
+              name="job_application[answers_attributes][0][text_value]" aria-required="true"></textarea>
+  </div>
+  <div>
+    <label for="job_application_answers_attributes_1_boolean_value">Are you authorized to work in the US? *</label>
+    <select id="job_application_answers_attributes_1_boolean_value"
+            name="job_application[answers_attributes][1][boolean_value]" aria-required="true">
+      <option value=""></option>
+      <option value="1">Yes</option>
+      <option value="0">No</option>
+    </select>
+  </div>
+  <fieldset>
+    <legend>How did you hear about this job?</legend>
+    <label><input type="radio" name="job_application[referral]" value="linkedin"> LinkedIn</label>
+    <label><input type="radio" name="job_application[referral]" value="friend"> Friend</label>
+    <label><input type="radio" name="job_application[referral]" value="other"> Other</label>
+  </fieldset>
+  <div>
+    <label for="gender">Gender</label>
+    <select id="gender" name="job_application[gender]">
+      <option value=""></option>
+      <option value="1">Male</option>
+      <option value="2">Female</option>
+      <option value="3">Decline To Self Identify</option>
+    </select>
+  </div>
+  <input type="hidden" name="security_code" value="xyz">
+  <input type="submit" id="submit_app" value="Submit Application"
+         onclick="window.__submitted = true; return false;">
+</form>
+<script>window.__submitted = false;</script>
+</body>
+</html>

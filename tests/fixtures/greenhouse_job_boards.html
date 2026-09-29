@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head><title>ML Engineer - Acme | Greenhouse</title></head>
+<body>
+<main>
+  <h1>Machine Learning Engineer</h1>
+  <form id="application-form">
+    <div class="input-wrapper">
+      <label for="first_name">First Name *</label>
+      <input type="text" id="first_name" name="first_name" aria-required="true" autocomplete="given-name">
+    </div>
+    <div class="input-wrapper">
+      <label for="last_name">Last Name *</label>
+      <input type="text" id="last_name" name="last_name" aria-required="true" autocomplete="family-name">
+    </div>
+    <div class="input-wrapper">
+      <label for="email">Email *</label>
+      <input type="email" id="email" name="email" aria-required="true" autocomplete="email">
+    </div>
+    <div class="input-wrapper">
+      <label for="phone">Phone *</label>
+      <input type="tel" id="phone" name="phone" aria-required="true" autocomplete="tel">
+    </div>
+    <div class="input-wrapper">
+      <label for="resume">Resume/CV *</label>
+      <input type="file" id="resume" name="resume" aria-required="true">
+    </div>
+    <!-- react-select style combobox -->
+    <div class="select select__container" data-options='["Bachelor&apos;s Degree","Master&apos;s Degree","PhD"]'>
+      <label for="education_degree">Highest degree earned *</label>
+      <input type="text" id="education_degree" role="combobox" aria-required="true"
+             aria-expanded="false" aria-controls="degree-listbox" autocomplete="off">
+      <ul id="degree-listbox" role="listbox" hidden></ul>
+    </div>
+    <div class="input-wrapper">
+      <label for="question_linkedin">LinkedIn Profile</label>
+      <input type="text" id="question_linkedin" name="question_linkedin">
+    </div>
+    <div class="input-wrapper">
+      <label for="question_cover">Anything else you'd like us to know?</label>
+      <textarea id="question_cover" name="question_cover"></textarea>
+    </div>
+    <button type="button" id="apply-button"
+            onclick="window.__submitted = true;">Submit application</button>
+  </form>
+</main>
+<script>
+window.__submitted = false;
+// Minimal react-select-like behavior for the combobox.
+(function () {
+  const input = document.getElementById('education_degree');
+  const list = document.getElementById('degree-listbox');
+  const container = input.closest('[data-options]');
+  const options = JSON.parse(container.getAttribute('data-options'));
+  function render(filter) {
+    list.innerHTML = '';
+    const f = (filter || '').toLowerCase();
+    options.filter(o => o.toLowerCase().includes(f)).forEach(o => {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.textContent = o;
+      li.addEventListener('click', () => {
+        input.value = o;
+        input.dataset.selected = o;
+        list.hidden = true;
+        input.setAttribute('aria-expanded', 'false');
+      });
+      list.appendChild(li);
+    });
+    list.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+  }
+  input.addEventListener('click', () => render(input.value));
+  input.addEventListener('input', () => render(input.value));
+})();
+</script>
+</body>
+</html>

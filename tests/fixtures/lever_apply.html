@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head><title>Initech - Senior Staff Engineer</title></head>
+<body>
+<div class="content">
+  <form id="application-form" method="post" action="/initech/xyz/apply">
+    <input type="hidden" name="csrf" value="tok123">
+    <ul>
+      <li class="application-question">
+        <div class="application-label">Full name<span class="required">✱</span></div>
+        <input type="text" name="name" required>
+      </li>
+      <li class="application-question">
+        <div class="application-label">Email<span class="required">✱</span></div>
+        <input type="email" name="email" required>
+      </li>
+      <li class="application-question">
+        <div class="application-label">Phone</div>
+        <input type="tel" name="phone">
+      </li>
+      <li class="application-question">
+        <div class="application-label">Current company</div>
+        <input type="text" name="org">
+      </li>
+      <li class="application-question">
+        <div class="application-label">LinkedIn URL</div>
+        <input type="text" name="urls[LinkedIn]">
+      </li>
+      <li class="application-question">
+        <div class="application-label">Resume/CV<span class="required">✱</span></div>
+        <input type="file" name="resume" required>
+      </li>
+      <li class="application-question custom-card">
+        <div class="application-label">Why do you want to work at Initech?</div>
+        <textarea name="cards[abc123][field0]"></textarea>
+      </li>
+      <li class="application-question custom-card">
+        <div class="application-label">Are you authorized to work in the US?</div>
+        <select name="cards[abc123][field1]">
+          <option value=""></option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+        </select>
+      </li>
+    </ul>
+    <button type="submit" id="btn-submit"
+            onclick="document.body.setAttribute('data-submitted', 'yes')">
+      Submit application
+    </button>
+  </form>
+</div>
+</body>
+</html>
