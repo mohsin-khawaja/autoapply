@@ -443,6 +443,24 @@ def run_queue(
                 # same req under new ids, and a batch can hold several of them.
                 # A second application to a company+title already submitted
                 # reads as spam.
+                # Targeting rules change and discovery rescores after a job is
+                # queued, so a row can stop qualifying while it waits. Re-check
+                # here or the batch spends slots on roles now scored out.
+                score_row = conn.execute(
+                    "SELECT score FROM jobs WHERE id = ?", (job.job_id,)
+                ).fetchone()
+                if score_row is not None and score_row["score"] <= 0:
+                    db.record_application(
+                        conn, job_id=job.job_id, status="skipped",
+                        notes="no longer matches targeting rules",
+                    )
+                    conn.commit()
+                    console.print(
+                        f"[dim]{done}/{len(jobs)} {job.company_name} — "
+                        f"skipped (scored out)[/]"
+                    )
+                    pending.pop(0)
+                    continue
                 if _already_submitted(conn, job):
                     db.record_application(
                         conn, job_id=job.job_id, status="skipped",

@@ -676,3 +676,17 @@ def test_run_skips_a_repost_of_an_already_submitted_role(conn):
     assert _already_submitted(conn, repost) is True
     # The submitted row itself is not considered a duplicate of itself.
     assert jobs.get("first") is None  # it is no longer queued
+
+
+def test_run_skips_jobs_that_scored_out_after_queueing(conn):
+    """Discovery rescores after queueing; a row can stop qualifying while it waits."""
+    now = datetime.now(UTC).isoformat()
+    db.upsert_job(conn, id="stale", company_name="C", title="Claude Corps",
+                  url="https://boards.greenhouse.io/c", now_iso=now,
+                  ats="greenhouse", score=90)
+    enqueue(conn, ["stale"])
+    conn.execute("UPDATE jobs SET score = 0 WHERE id = 'stale'")
+    conn.commit()
+    assert conn.execute("SELECT score FROM jobs WHERE id='stale'").fetchone()["score"] == 0
+    # queued_jobs still returns it; the runner is what must drop it.
+    assert any(j.job_id == "stale" for j in queued_jobs(conn, 50))
