@@ -9,6 +9,7 @@ found, or required fields cannot be confidently filled, it returns
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -83,6 +84,53 @@ _EXTRACT_JS = """
 """
 
 
+
+#: Text on the control that reveals an application form on a job description
+#: page. Ordered most-specific first so "Apply for this job" beats a nav "Apply".
+_APPLY_LABELS = (
+    "apply for this job", "apply to this job", "apply now", "submit application",
+    "start application", "apply for this role", "apply online", "apply",
+)
+
+
+def _open_application_form(page: Page) -> bool:
+    """Click an Apply control and wait for a form to appear. True if one did.
+
+    Only follows same-origin navigation: an Apply button that leaves for a
+    third-party ATS is handled by that ATS's own adapter on a later pass, not
+    chased here.
+    """
+    origin = _origin(page.url)
+    for label in _APPLY_LABELS:
+        try:
+            control = page.get_by_role(
+                "link", name=re.compile(rf"^\s*{re.escape(label)}\s*$", re.I)
+            ).or_(
+                page.get_by_role(
+                    "button", name=re.compile(rf"^\s*{re.escape(label)}\s*$", re.I)
+                )
+            ).first
+            if control.count() == 0:
+                continue
+            control.click(timeout=3_000)
+        except Exception:  # noqa: BLE001 - a stuck control is not a failure
+            continue
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=8_000)
+            page.wait_for_timeout(600)
+        except Exception:  # noqa: BLE001
+            pass
+        if _origin(page.url) != origin:
+            return False  # left for another ATS; its adapter handles it
+        if page.locator("input, textarea, select").count() > 2:
+            return True
+    return False
+
+
+def _origin(url: str) -> str:
+    parts = urlparse(url)
+    return f"{parts.scheme}://{parts.netloc}"
+
 @base.register
 class GenericAdapter(base.BaseAdapter):
     """Fallback adapter: any http(s) URL, best-effort form scan."""
@@ -102,6 +150,14 @@ class GenericAdapter(base.BaseAdapter):
             raw = page.evaluate(_EXTRACT_JS)
         except Exception:  # noqa: BLE001 - degrade gracefully, never fail hard
             return []
+        if not raw and _open_application_form(page):
+            # "no form found" is 45% of all outcomes, and most of those pages do
+            # have a form — behind an Apply button. The landing page is a job
+            # description; the form is one click away.
+            try:
+                raw = page.evaluate(_EXTRACT_JS)
+            except Exception:  # noqa: BLE001
+                return []
         fields: list[base.FormField] = []
         for r in raw:
             fields.append(

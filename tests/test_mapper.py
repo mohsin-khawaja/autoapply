@@ -448,3 +448,28 @@ def test_every_degree_level_is_kept_distinct():
     # The right level still matches.
     for good in ("Bachelor's Degree", "BS", "Undergraduate Degree"):
         assert level_ok("Bachelor of Science", good), good
+
+
+def test_extra_profile_links_map_but_are_never_invented():
+    """New link fields fill when set and flag when blank — never guessed."""
+    from autoapply.filling.synonyms import match_key
+
+    for label, key in (
+        ("Handshake Profile", "identity.links.handshake"),
+        ("Devpost", "identity.links.devpost"),
+        ("Kaggle profile URL", "identity.links.kaggle"),
+        ("Google Scholar", "identity.links.scholar"),
+        ("Stack Overflow", "identity.links.stackoverflow"),
+    ):
+        assert match_key(label=label, name="", field_id="", aria="", autocomplete="") == key
+
+    # Unset in the fixture profile => needs_input, not an invented URL.
+    fp = _plan([
+        FormField(key="h", field_type="text", label="Handshake Profile", selector="#h")
+    ]).fields[0]
+    assert fp.needs_input and fp.value is None
+
+    # The generic "website" pattern still wins its own label.
+    assert match_key(
+        label="Personal Website", name="", field_id="", aria="", autocomplete=""
+    ) == "identity.links.website"

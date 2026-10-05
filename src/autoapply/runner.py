@@ -189,8 +189,11 @@ def process_one(
     ats = job.ats or classify_ats(job.url).value  # ats can be NULL on older rows
     if ats == "yc":
         return mark_manual("YC — sign in at Work at a Startup and message the founder")
-    if ats in _ACCOUNT_WALLED:
-        return mark_manual(f"{ats} needs an account — apply manually")
+    if ats in _ACCOUNT_WALLED and not _has_portal_session(page, job.url):
+        # Skipped unseen only while signed out. The browser profile is
+        # persistent, so once you sign in to a portal once, later runs find the
+        # session and fill the form like any other ATS.
+        return mark_manual(f"{ats} needs an account — sign in once, then it is automatic")
 
     adapter_cls = base.resolve_adapter(job.url)
     if adapter_cls is None:  # generic detects any http(s); None => unusable URL
@@ -383,6 +386,34 @@ def _recover_page(page: Page) -> bool:
     return True
 
 
+
+
+def _has_portal_session(page: Page, url: str) -> bool:
+    """True when the persistent browser profile holds cookies for this portal.
+
+    Account-walled portals (Workday, iCIMS, SmartRecruiters, Rippling) show no
+    form to a signed-out visitor, so loading them is wasted time. Signed in,
+    they are ordinary forms — so check for a session rather than refusing the
+    whole family outright.
+    """
+    from urllib.parse import urlparse
+
+    host = (urlparse(url).netloc or "").lower()
+    if not host:
+        return False
+    # Match the registrable-ish suffix so a tenant subdomain still counts.
+    suffix = ".".join(host.split(".")[-3:])
+    try:
+        cookies = page.context.cookies()
+    except Exception:  # noqa: BLE001 - no context yet is simply "not signed in"
+        return False
+    for c in cookies:
+        domain = str(c.get("domain", "")).lstrip(".").lower()
+        if domain and (domain in host or host.endswith(domain) or suffix.endswith(domain)):
+            name = str(c.get("name", "")).lower()
+            if any(k in name for k in ("session", "auth", "token", "sso", "login")):
+                return True
+    return False
 
 def _already_submitted(conn: sqlite3.Connection, job: QueuedJob) -> bool:
     """True when a different application to the same company + title was sent."""

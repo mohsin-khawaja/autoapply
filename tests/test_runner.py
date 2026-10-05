@@ -712,3 +712,26 @@ def test_dashboard_reports_nothing_when_no_database_has_data(tmp_path):
     s = Settings(home=tmp_path / ".autoapply")
     s.repo_root = tmp_path
     assert _find_populated_db(s) is None
+
+
+def test_walled_portal_is_attempted_once_a_session_exists(monkeypatch):
+    """Workday shows no form signed out, but is an ordinary form signed in."""
+    from autoapply.runner import _has_portal_session
+
+    class _Ctx:
+        def __init__(self, cookies):
+            self._c = cookies
+
+        def cookies(self):
+            return self._c
+
+    class _Page:
+        def __init__(self, cookies):
+            self.context = _Ctx(cookies)
+
+    url = "https://acme.wd5.myworkdayjobs.com/careers/job/123"
+    assert not _has_portal_session(_Page([]), url)
+    assert not _has_portal_session(_Page([{"domain": ".example.com", "name": "session"}]), url)
+    assert _has_portal_session(
+        _Page([{"domain": ".myworkdayjobs.com", "name": "PLAY_SESSION"}]), url
+    )
