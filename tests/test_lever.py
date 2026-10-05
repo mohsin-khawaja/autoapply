@@ -136,3 +136,58 @@ class TestFill:
         assert result.status == "filled"
         assert result.filled_count == 3
         assert lever_page.evaluate("() => document.body.getAttribute('data-submitted')") is None
+
+
+@pytest.mark.parametrize("answer,checked", [("Yes", True), ("No", False)])
+def test_checkbox_respects_answer(page: Page, answer: str, checked: bool) -> None:
+    page.set_content('<form><input type="checkbox" name="consent" checked></form>')
+    field = LeverAdapter().extract_form(page)[0]
+    plan = _plan([_fp(field, answer)], None)
+    result = LeverAdapter().fill(page, plan)
+    assert result.status == "filled"
+    assert page.is_checked(field.selector) is checked
+
+
+def test_checkbox_rejects_non_boolean_mapping(page: Page) -> None:
+    page.set_content('<form><input type="checkbox" name="consent"></form>')
+    field = LeverAdapter().extract_form(page)[0]
+    plan = _plan([_fp(field, "assets/resume.pdf")], None)
+    result = LeverAdapter().fill(page, plan)
+    assert result.status == "needs_input"
+    assert plan.unresolved == plan.fields
+    assert not page.is_checked(field.selector)
+
+
+def test_failed_widget_blocks_submit_gate(page: Page) -> None:
+    page.set_content('<form><select name="work" required><option>Yes</option></select>'
+                     '<input name="name"></form>')
+    fields = LeverAdapter().extract_form(page)
+    plan = _plan([_fp(fields[0], "No"), _fp(fields[1], "A B")], None)
+    page.set_default_timeout(100)
+    try:
+        result = LeverAdapter().fill(page, plan)
+    finally:
+        page.set_default_timeout(30000)
+    assert result.status == "needs_input"
+    assert plan.unresolved == [plan.fields[0]]
+    assert page.input_value('[name="name"]') == "A B"
+
+
+def test_missing_required_value_blocks_submit_gate(page: Page) -> None:
+    page.set_content('<form><input name="name" required></form>')
+    field = LeverAdapter().extract_form(page)[0]
+    plan = _plan([_fp(field, None)], None)
+    result = LeverAdapter().fill(page, plan)
+    assert result.status == "needs_input"
+    assert plan.unresolved == plan.fields
+
+
+
+def test_required_checkbox_no_stays_unresolved(page: Page) -> None:
+    page.set_content('<form><input type="checkbox" name="consent" required></form>')
+    field = LeverAdapter().extract_form(page)[0]
+    plan = _plan([_fp(field, "No")], None)
+    result = LeverAdapter().fill(page, plan)
+    assert result.status == "needs_input"
+    assert plan.unresolved == plan.fields
+    assert not page.is_checked(field.selector)
