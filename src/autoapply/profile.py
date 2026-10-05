@@ -29,6 +29,15 @@ class Links(BaseModel):
     website: str = ""
     github: str = ""
     twitter: str = ""  # X / Twitter profile URL
+    # Fill any of these in profile.yaml and they populate automatically
+    # wherever a form asks for them. Empty means "not provided" — never guessed.
+    handshake: str = ""
+    simplify: str = ""
+    devpost: str = ""
+    kaggle: str = ""
+    scholar: str = ""      # Google Scholar
+    stackoverflow: str = ""
+    other_link: str = ""
 
 
 class Identity(BaseModel):

@@ -34,6 +34,12 @@ SYNONYMS: dict[str, list[str]] = {
     "identity.links.linkedin": ["linkedin"],
     "identity.links.github": ["github"],
     "identity.links.twitter": ["twitter", "x profile", "x handle", "x (twitter)", "x/twitter"],
+    "identity.links.handshake": ["handshake"],
+    "identity.links.simplify": ["simplify"],
+    "identity.links.devpost": ["devpost"],
+    "identity.links.kaggle": ["kaggle"],
+    "identity.links.scholar": ["google scholar", "scholar profile", "scholar"],
+    "identity.links.stackoverflow": ["stack overflow", "stackoverflow"],
     "identity.links.website": ["website", "portfolio", "personal site", "personal website"],
     "identity.location.city": [
         "city", "current city", "location", "your location", "where are you based",

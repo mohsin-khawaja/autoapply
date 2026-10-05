@@ -63,6 +63,29 @@ Ollama" is not a change that gains anything today. Any new provider must keep a
 working fallback: a dead provider used to fail every field of every application
 for a whole unattended batch.
 
+## Accounts and browser sessions
+
+The browser profile at `.autoapply/browser_data/` is a real, persistent Chrome
+profile. Whatever you sign into there stays signed in across runs.
+
+Account-walled portals (Workday, iCIMS, SmartRecruiters, Rippling) show no form
+to a signed-out visitor. The runner checks `_has_portal_session` for a session
+cookie on that host: signed out it records manual without wasting a page load;
+signed in it fills the form like any other ATS. To enable a portal, sign in once
+yourself in that profile — `uv run autoapply open <job-id>` opens it — then
+later runs pick it up.
+
+YC Work at a Startup stays manual by design even when signed in: applying there
+is a message to a founder, which needs a human.
+
+**Never automate a sign-in, store credentials in the repo, or create accounts.**
+Sessions are established by the user, by hand, once.
+
+Profile links live under `identity.links` in `profile.yaml` (linkedin, website,
+github, twitter, handshake, simplify, devpost, kaggle, scholar, stackoverflow,
+other_link). Empty means not provided — the field is flagged for the user, never
+guessed.
+
 ## Invariants — do not break these
 
 These exist because each one was a real bug that put wrong data on live
