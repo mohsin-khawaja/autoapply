@@ -87,6 +87,7 @@ def resolve_redirect(url: str, *, client: httpx.Client | None = None) -> str:
 # ---- scoring --------------------------------------------------------------
 
 HIGH_TITLES = (
+    "sales engineer", "presales engineer", "pre-sales engineer", "fde",
     "ml engineer", "machine learning engineer", "machine learning", "ai engineer",
     "applied ai", "applied ml", "ai solutions", "forward deployed", "solutions engineer",
     "ai/ml", "deep learning", "research engineer",
@@ -172,7 +173,7 @@ TARGET_FAMILIES = (
     "business intelligence", "bi engineer", "data analyst",
     # Go-to-market / customer-facing engineering
     "gtm engineer", "go-to-market engineer", "go to market engineer",
-    "forward deployed", "solutions engineer", "solutions architect",
+    "forward deployed", "forward-deployed", "fde", "solutions engineer", "solutions architect",
     "sales engineer", "solutions consultant", "customer engineer",
     # Product
     "product manager", "product management", "associate product",

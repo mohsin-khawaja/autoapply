@@ -195,6 +195,7 @@ def _fuzzy_option(value: str, options: list[str], threshold: int) -> tuple[str |
 _UNFABRICABLE = (
     "gpa", "grade point", "sat score", "act score", "gre score", "gmat",
     "lsat", "test score", "class rank", "security clearance level",
+    "high school", "secondary school",
 )
 
 
@@ -291,6 +292,9 @@ def _plan_field(
         aria=f.attrs.get("aria-label", ""),
         autocomplete=f.autocomplete or "",
     )
+    if key == "documents.resume":
+        return FieldPlan(f, None, "unmapped", 0.0, True,
+                         note="Resume path is only valid for a file-upload field")
     if key:
         value = resolve_profile_value(profile, key)
         if value is None:

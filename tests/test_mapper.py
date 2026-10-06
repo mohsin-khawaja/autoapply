@@ -473,3 +473,20 @@ def test_extra_profile_links_map_but_are_never_invented():
     assert match_key(
         label="Personal Website", name="", field_id="", aria="", autocomplete=""
     ) == "identity.links.website"
+
+
+def test_high_school_does_not_get_university_or_llm_guess():
+    plan = _plan([FormField(key="school", field_type="text", label="High school attended",
+                           selector="#school", required=True)])
+    assert plan.fields[0].value is None
+    assert plan.fields[0].source == "unmapped"
+    assert plan.unresolved
+
+
+def test_resume_consent_does_not_get_file_path():
+    plan = _plan([FormField(key="sharing", field_type="checkbox",
+                           label="Share my resume with other employers", selector="#sharing",
+                           required=True)])
+    assert plan.fields[0].value is None
+    assert plan.fields[0].source == "unmapped"
+    assert plan.unresolved

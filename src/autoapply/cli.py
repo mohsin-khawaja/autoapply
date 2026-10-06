@@ -763,6 +763,29 @@ def _playwright_ready() -> bool:
     return False
 
 
+@app.command("board-open")
+def board_open(name: str = typer.Argument(..., help="yc, handshake, or simplify")) -> None:
+    """Open a board for user sign-in in the persistent tool browser; never apply."""
+    import fcntl
+
+    from autoapply.board_access import bookmarks
+    from autoapply.browser import launch_context
+
+    settings = load_settings()
+    urls = bookmarks(settings)
+    if name not in urls:
+        raise typer.BadParameter("Choose yc, handshake, or simplify")
+    settings.ensure_dirs()
+    with (settings.home / "away.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise typer.BadParameter("Stop the unattended run before board sign-in") from None
+        with launch_context(settings.browser_data_dir, headed=True) as (_, page):
+            page.goto(urls[name], wait_until="domcontentloaded")
+            console.input("Sign in in the browser. Press Enter here when finished: ")
+
+
 @app.command("source-access")
 def source_access() -> None:
     """Show profile links, startup sources, and portal sign-in setup."""

@@ -160,6 +160,13 @@ def print_access(settings: Settings) -> None:
     else:
         for key, value in profile.identity.links.model_dump().items():
             print(f"  {key}: {value or 'not supplied'}")
+    from autoapply.board_access import bookmarks
+
+    print("Board access (not profile URLs):")
+    for name, url in bookmarks(settings).items():
+        print(f"  {name}: {url}")
+    print("Sign in with: autoapply board-open <name> (stop away first)")
+    print("YC founder messages and Handshake applications remain manual.")
     print("Startup sources:")
     for source in CATALOG:
         print(f"  {source.name} [{source.mode}] {source.url}\n    {source.note}")

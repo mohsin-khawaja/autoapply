@@ -28,6 +28,7 @@ from autoapply.ats import base
 from autoapply.browser import launch_context, looks_blocked
 from autoapply.config import Settings
 from autoapply.filling import llm_answers, mapper
+from autoapply.priorities import role_priority
 from autoapply.profile import Profile, load_profile
 from autoapply.sources.simplify import classify_ats
 
@@ -53,24 +54,26 @@ class QueuedJob:
         return self.job_id
 
 
-#: Postings newer than this are worked before older ones, regardless of score.
+#: Within each role priority, recent postings come before older ones.
 _FRESH_DAYS = 14
 
 
 def queued_jobs(conn: sqlite3.Connection, limit: int) -> list[QueuedJob]:
-    """Queued applications: fresh postings first, then fillable ATSs, then score.
+    """Queue order: preferred roles, freshness, fillable ATSs, then score.
 
     A req posted this week is still accepting; one from two months ago is
     often filled but not yet delisted. With a 500-deep queue, ordering by
     score alone left this week's postings unreached for days.
     """
+    conn.create_function("role_priority", 1, role_priority)
     fresh_cutoff = time.time() - _FRESH_DAYS * 86400
     rows = conn.execute(
         """SELECT a.job_id, j.company_name, j.title,
                   COALESCE(j.final_url, j.url) AS url, j.ats
            FROM applications a JOIN jobs j ON j.id = a.job_id
-           WHERE a.status = 'queued'
-           ORDER BY (COALESCE(j.date_posted, 0) >= ?) DESC,
+           WHERE a.status = 'queued' AND j.active = 1 AND j.is_visible = 1
+             AND j.score > 0
+           ORDER BY role_priority(j.title) DESC, (COALESCE(j.date_posted, 0) >= ?) DESC,
                     -- Work the ATSs that can actually complete an application
                     -- first; a 'generic' posting is usually a careers page
                     -- with no inline form.
@@ -273,7 +276,12 @@ def process_one(
 
     if auto_submit and adapter.kind in settings.auto_submit_allowlist and not plan.unresolved:
         after = run_dir / f"{plan.job_id[:12]}-submitted.png"
-        sub = adapter.submit(page, after)
+        if adapter.kind in (base.ATSKind.LEVER, base.ATSKind.ASHBY):
+            from autoapply.submission import submit_application
+
+            sub = submit_application(page, plan, settings.auto_submit_allowlist, after)
+        else:
+            sub = adapter.submit(page, after)
         status = sub.status  # submitted | needs_input (bounced) | filled | failed
         proof = str(after) if after.exists() else str(shot)
         if status == "submitted":
@@ -416,10 +424,10 @@ def _has_portal_session(page: Page, url: str) -> bool:
     return False
 
 def _already_submitted(conn: sqlite3.Connection, job: QueuedJob) -> bool:
-    """True when a different application to the same company + title was sent."""
+    """Block reposts of sent applications and outcomes awaiting confirmation."""
     row = conn.execute(
         """SELECT 1 FROM applications a JOIN jobs j ON j.id = a.job_id
-           WHERE a.submitted_at IS NOT NULL
+           WHERE (a.submitted_at IS NOT NULL OR a.status = 'filled')
              AND a.job_id != ?
              AND j.company_name = ?
              AND lower(trim(j.title)) = lower(trim(?))
