@@ -24,6 +24,7 @@ from rich.console import Console
 
 from autoapply import db
 from autoapply.config import Settings
+from autoapply.priorities import role_priority
 
 console = Console()
 
@@ -97,8 +98,11 @@ def run_cycle(
         except Exception as e:  # noqa: BLE001 - a dead board must not end the loop
             res.error = f"discovery: {e}"
 
+        _prune_queue(conn, min_score=min_score)
+
         # 2. Top the queue up with fillable, untried postings.
         res.queued = _top_up_queue(conn, settings, batch=batch, min_score=min_score)
+        _prune_queue(conn, min_score=min_score)
         conn.commit()
     finally:
         conn.close()
@@ -127,6 +131,30 @@ def run_cycle(
     return res
 
 
+def _prune_queue(conn: sqlite3.Connection, *, min_score: int) -> int:
+    """Retire stale queued work without touching completed applications."""
+    import json
+
+    from autoapply.sources.simplify import Listing, heuristic_score
+
+    skipped = 0
+    rows = conn.execute(
+        "SELECT j.* FROM jobs j JOIN applications a ON a.job_id=j.id "
+        "WHERE a.status='queued'"
+    ).fetchall()
+    for row in rows:
+        listing = Listing(row["id"], row["company_name"], row["title"], row["url"],
+                          json.loads(row["locations"] or "[]"), "", "",
+                          bool(row["active"]), bool(row["is_visible"]), row["date_posted"])
+        if row["score"] < min_score or row["score"] <= 0 or heuristic_score(listing) == 0:
+            conn.execute(
+                "UPDATE applications SET status='skipped', notes=? WHERE job_id=?",
+                ("Queue preflight: excluded, inactive, or below score floor", row["id"]),
+            )
+            skipped += 1
+    return skipped
+
+
 def _top_up_queue(
     conn: sqlite3.Connection, settings: Settings, *, batch: int, min_score: int
 ) -> int:
@@ -142,6 +170,7 @@ def _top_up_queue(
     fillable = ("greenhouse", "lever", "ashby")
     # Fresh postings first: a req posted this week is still accepting; one
     # from two months ago is often filled but not yet delisted.
+    conn.create_function("role_priority", 1, role_priority)
     fresh_cutoff = time.time() - _FRESH_DAYS * 86400
     rows = conn.execute(
         """SELECT j.id FROM jobs j
@@ -157,7 +186,8 @@ def _top_up_queue(
                  AND sj.company_name = j.company_name
                  AND lower(trim(sj.title)) = lower(trim(j.title))
              )
-           ORDER BY (COALESCE(j.date_posted, 0) >= ?) DESC,
+           ORDER BY role_priority(j.title) DESC,
+                    (COALESCE(j.date_posted, 0) >= ?) DESC,
                     CASE j.ats WHEN 'greenhouse' THEN 0 WHEN 'lever' THEN 1 ELSE 2 END,
                     j.date_posted DESC, j.score DESC
            LIMIT ?""",
@@ -171,20 +201,22 @@ def _top_up_queue(
     # they are already filled but for a question or two, and the mapper keeps
     # gaining answers (pronouns, English proficiency, consent boxes, the option
     # and checkbox fixes), so a retry now often completes and submits.
-    return added + _requeue_stalled(conn, limit=batch - added)
+    return added + _requeue_stalled(conn, limit=batch - added, min_score=min_score)
 
 
-def _requeue_stalled(conn: sqlite3.Connection, *, limit: int) -> int:
+def _requeue_stalled(conn: sqlite3.Connection, *, limit: int, min_score: int = 0) -> int:
     """Return needs_input/failed fillable applications to the queue. Returns count."""
     if limit <= 0:
         return 0
+    conn.create_function("role_priority", 1, role_priority)
     rows = conn.execute(
         """SELECT a.job_id FROM applications a JOIN jobs j ON j.id = a.job_id
            WHERE a.status IN ('needs_input', 'failed')
-             AND j.active = 1 AND j.ats IN ('greenhouse', 'lever', 'ashby')
-           ORDER BY j.score DESC
+             AND j.active = 1 AND j.is_visible = 1 AND j.score >= ? AND j.score > 0
+             AND j.ats IN ('greenhouse', 'lever', 'ashby')
+           ORDER BY role_priority(j.title) DESC, j.score DESC
            LIMIT ?""",
-        (limit,),
+        (min_score, limit),
     ).fetchall()
     for r in rows:
         conn.execute(

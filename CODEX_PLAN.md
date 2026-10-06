@@ -199,3 +199,35 @@ To reuse an existing tool session from another checkout, explicitly set
 `AUTOAPPLY_HOME` to that tool's `.autoapply` directory before `open`; this also
 selects its database. Do not launch a second process against an in-use browser
 profile. Discovery and validation for this change used a separate database copy.
+
+## Preferred roles and explicit submission launcher
+
+Queue priority: GTM/sales engineering first, FDE/AI/ML second, remaining eligible
+software/data/product roles next. Ranking does not override seniority, location,
+credential, or title-family exclusions. The explicit launcher uses score floor 1
+so other eligible families remain in scope. Existing queued rows are revalidated
+before filling; retry selection respects the score floor. Freshness and ATS
+ordering remain tie-breakers within each priority.
+
+`python -m autoapply.unattended --home <existing-data-dir> --profile <profile.yaml>
+--env-file <existing.env> --auto-submit` runs batches of 40 with 45-minute pauses.
+Omit `--auto-submit` for review-only. Add `--check` for a provider/profile/resume
+preflight that does not open a browser or process applications. An exclusive data
+lock prevents two instances; legacy away processes cause a startup error. Keep
+an old launchd away service unloaded when using this launcher.
+
+Lever and Ashby submission uses the integration helper in `submission.py`: exactly
+one visible enabled Submit control, the existing allowlist/unresolved gate, and
+native required-control validity. A visible confirmation or changed confirmation
+URL establishes success; hidden HTML and form disappearance alone do not. An
+uncertain click is recorded as `filled` for manual verification, never an automatic
+retry. Reposts of uncertain company/title pairs are also blocked. Frozen base and
+DB interfaces remain untouched. Greenhouse retains its existing submit path.
+
+`autoapply board-open yc|handshake|simplify` opens the selected board in the tool's
+persistent profile and waits for user sign-in. Stop away before using it. Optional
+bookmarks in `<AUTOAPPLY_HOME>/board_access.json` override access URLs. These are
+not credentials or public applicant profile links. YC founder messages and
+Handshake applications remain manual; supplying their URLs does not authenticate
+them or add automatic submission support. Simplify's GitHub feed already works
+without authentication.
