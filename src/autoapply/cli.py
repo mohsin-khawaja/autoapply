@@ -101,7 +101,7 @@ def discover(
     status: bool = typer.Option(False, "--status", help="Show last run and staleness; exit."),
     force: bool = typer.Option(False, "--force", help="Ignore the min-interval skip guard."),
     only: str = typer.Option(
-        None, "--only", help="Comma-separated sources (simplify,ycombinator,referrals)."
+        None, "--only", help="Comma-separated source names (see `autoapply source-access`)."
     ),
     notify_on_failure: bool = typer.Option(
         True, "--notify/--no-notify", help="Alert on failure or staleness."
@@ -761,6 +761,14 @@ def _playwright_ready() -> bool:
         if base.exists() and any(base.glob("chromium-*")):
             return True
     return False
+
+
+@app.command("source-access")
+def source_access() -> None:
+    """Show profile links, startup sources, and portal sign-in setup."""
+    from autoapply.sources.startup_networks import print_access
+
+    print_access(load_settings())
 
 
 if __name__ == "__main__":

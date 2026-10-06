@@ -130,12 +130,30 @@ def _referrals(settings: Settings) -> tuple[int, int]:
     return r.fetched, r.upserted
 
 
+def _hackernews(settings: Settings) -> tuple[int, int]:
+    from autoapply.sources import hackernews
+
+    return hackernews.sync(settings)
+
+
+def _startup_source(name: str) -> Callable[[Settings], tuple[int, int]]:
+    from autoapply.sources import startup_networks
+
+    return lambda settings: startup_networks.sync(settings, name)
+
+
 #: name -> callable(settings) -> (fetched, new)
 SOURCES: dict[str, Callable[[Settings], tuple[int, int]]] = {
     "simplify": _simplify,
     "ycombinator": _ycombinator,
     "referrals": _referrals,
+    "hackernews": _hackernews,
 }
+
+
+# Public company lists feed the same ATS APIs and targeting as HN.
+for _name in ("lennys", "breakout", "foundersysk", "a16zbuild", "nextplay", "cosign"):
+    SOURCES[_name] = _startup_source(_name)
 
 
 def discover(
