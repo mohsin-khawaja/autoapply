@@ -131,9 +131,16 @@ class LeverAdapter(base.BaseAdapter):
                         filled += 1
                     else:
                         needs.append(f.label or f.key)
+                        fp.needs_input = True
+                        fp.note = "resume unavailable — needs you"
                         _flag_quiet(page, f.selector)
                     continue
                 if fp.value is None:
+                    if f.required:
+                        needs.append(f.label or f.key)
+                        fp.needs_input = True
+                        fp.note = "required value missing — needs you"
+                        _flag_quiet(page, f.selector)
                     continue
                 value = fp.value if isinstance(fp.value, str) else str(fp.value)
                 # Per-field isolation: a stuck widget flags that one field and
@@ -145,10 +152,19 @@ class LeverAdapter(base.BaseAdapter):
                     elif f.field_type == "radio":
                         page.check(f'{f.selector}[value="{value}"]')
                     elif f.field_type == "checkbox":
-                        page.check(f.selector)
+                        answer = value.strip().lower()
+                        if answer not in {"yes", "true", "1", "on", "checked",
+                                          "no", "false", "0", "off", "unchecked"}:
+                            raise ValueError("checkbox requires an explicit boolean answer")
+                        checked = answer in {"yes", "true", "1", "on", "checked"}
+                        page.set_checked(f.selector, checked)
+                        if f.required and not checked:
+                            raise ValueError("required checkbox left unchecked")
                     else:
                         page.fill(f.selector, value)
                 except Exception:  # noqa: BLE001 - flag and keep filling
+                    fp.needs_input = True
+                    fp.note = "could not apply planned value — needs you"
                     needs.append(f.label or f.key)
                     _flag_quiet(page, f.selector)
                     continue
