@@ -404,6 +404,12 @@ def sync(settings: Settings, *, resolve_redirects: bool = False) -> SyncResult:
                 )
                 counts[status] = counts.get(status, 0) + 1
 
+            feed_count = len(seen)
+            # This feed cannot declare a public startup-board posting closed.
+            # Those sources are bounded batches, not a complete Simplify snapshot.
+            seen.update(r[0] for r in conn.execute(
+                "SELECT id FROM jobs WHERE id LIKE 'startup-%'"
+            ))
             inactive = db.mark_inactive_absent(conn, seen, now_iso)
     finally:
         if redir_client is not None:
@@ -411,7 +417,7 @@ def sync(settings: Settings, *, resolve_redirects: bool = False) -> SyncResult:
         conn.close()
 
     return SyncResult(
-        total=len(seen),
+        total=feed_count,
         new=counts["new"],
         changed=counts["changed"],
         inactive=inactive,

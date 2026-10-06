@@ -139,3 +139,63 @@ values there, not by a failing test.
 Already handled; do not re-implement: per-application 2-minute cap, browser
 crash relaunch, stale Chrome profile-lock release, discovery retry with
 backoff, empty-cycle survival, duplicate-req skip at run time.
+
+## Startup discovery and account access
+
+`autoapply source-access` lists all nine requested networks, the configured
+profile links, and the persistent browser location. Discovery uses public GET
+requests only: no browser session, applicant profile, paid API, subscriptions,
+messages, endorsements, or applications are sent.
+
+| Source | Implemented path |
+|---|---|
+| YC job board | Existing public new-grad feed; applying remains manual |
+| Lenny's Jobs | Public Lenny 100 company data → company careers links → ATS APIs |
+| Breakout List | Public company directory → careers links → ATS APIs |
+| HN Who is hiring | Latest official `whoishiring` thread; top-level comments → linked ATS boards |
+| Founders You Should Know | Public newsletter company links → careers links → ATS APIs |
+| Ramp vendor reports | Research-only access link; rankings do not establish an open role |
+| a16z Build | Public newsletter and portfolio-board ATS links |
+| Next Play | Public curated company lists → careers links → ATS APIs |
+| Cosign | Public jobs-page ATS links, including embedded page data |
+
+These are bounded discovery passes, not complete copies of the networks. Each
+pass rotates through up to 20 company links (30 for HN), follows at most two
+same-host career pages per company, then reads current Greenhouse, Lever, or
+Ashby postings. HN identifies employers; the imported vacancies come from their
+current public boards, not guessed titles in comments. Reports under
+`.autoapply/startup-sources/<source>.json` retain unresolved company URLs,
+request failures, the next batch offset, and counts. A source with no successfully
+fetched board fails visibly rather than claiming an empty successful run.
+
+```bash
+uv run autoapply source-access
+uv run autoapply discover --only hackernews,lennys,breakout,foundersysk,a16zbuild,nextplay,cosign --force --no-notify
+```
+
+The normal `discover` / `away` discovery registry includes these seven sources.
+Running discovery does not queue or submit applications. New posts retain the
+existing title targeting, require positive US location evidence, and reject
+explicit 3+ year experience requirements. Unknown/bare-Remote locations stay
+out. Canonical ATS URLs dedupe against existing jobs across feeds, and reposts
+of submitted company/title pairs are skipped. Only a successfully refreshed
+board can retire its missing startup postings. Simplify cannot deactivate this
+separate source namespace.
+
+Profile links are not login sessions. LinkedIn, GitHub, website, and X remain
+whatever `profile.yaml` actually contains. Handshake, Simplify, Devpost, Kaggle,
+Scholar, Stack Overflow, and other links stay empty until the user supplies real
+URLs. Do not invent them from a username. Public sources do not need accounts;
+personalization, invite-only events, and membership features may.
+
+Portal sign-in remains `uv run autoapply open <job-id>` in the tool's persistent
+browser. Workday accounts can be employer-specific. Cookie presence (the PR #13
+routing heuristic) is not proof of authentication or that a form is supported.
+Never copy a personal Chrome cookie database into the tool. Creating credentials,
+security challenges, and accepting account terms require the user where the
+computer-use policy calls for handoff or confirmation.
+
+To reuse an existing tool session from another checkout, explicitly set
+`AUTOAPPLY_HOME` to that tool's `.autoapply` directory before `open`; this also
+selects its database. Do not launch a second process against an in-use browser
+profile. Discovery and validation for this change used a separate database copy.
