@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from autoapply import db
+from autoapply import db, scoring
 from autoapply.ats.base import ATSKind
 from autoapply.config import LISTINGS_URL, Settings
 
@@ -101,6 +101,11 @@ MEDIUM_TITLES = (
     "data analyst", "product analyst", "solutions analyst", "technical analyst",
     "sales engineer", "solutions consultant",
 )
+LEVEL_MARKERS = frozenset({
+    "senior", "sr.", "sr ", "staff", "principal", "lead ", "manager", "director",
+    "iii", " iv", " ii", "head of", "architect", "distinguished", "fellow",
+    "vp ", "vice president", "president", "chief",
+})
 EXCLUDE_TITLE = (
     "senior", "sr.", "sr ", "staff", "principal", "lead ", "manager", "director",
     "iii", " iv", " ii", "head of", "architect", "distinguished", "fellow",
@@ -182,7 +187,9 @@ TARGET_FAMILIES = (
 
 def in_target_family(title: str) -> bool:
     """True when the title names a role family on the profile."""
-    return any(f in title.lower() for f in TARGET_FAMILIES)
+    return bool(re.search(r"\bfde\b", title, re.I)) or any(
+        f in title.lower() for f in TARGET_FAMILIES
+    )
 
 
 #: Explicit new-grad / entry-level markers. These are what he can actually land,
@@ -243,14 +250,21 @@ class Listing:
         )
 
 
-def heuristic_score(listing: Listing) -> int:
+def heuristic_score(listing: Listing, settings: Settings | None = None) -> int:
+    return score_breakdown(listing, settings).total
+
+
+def score_breakdown(listing: Listing, settings: Settings | None = None) -> scoring.Score:
     """Score a listing 0-100 against the fixed targeting profile (SPEC.md §3).
 
     Cheap keyword/location heuristics only. Sponsorship is NOT a filter (US work
     authorized). Hard excludes (non-US, clearance, senior) return 0.
     """
+    settings = settings or Settings()
+    weights = settings.score_weights
+    bypass = settings.bypass_level(listing.title)
     if not (listing.active and listing.is_visible):
-        return 0
+        return scoring.Score(excluded="inactive_or_hidden")
 
     title = listing.title.lower()
     loc_text = " ".join(listing.locations).lower()
@@ -262,65 +276,71 @@ def heuristic_score(listing: Listing) -> int:
     for marker in EXCLUDE_TITLE:
         if marker == "manager" and is_product_role:
             continue
+        if marker in LEVEL_MARKERS and bypass:
+            continue
         if marker in title:
-            return 0
+            return scoring.Score(excluded="title:" + marker)
     if any(lang in title for lang in _FOREIGN_LANGUAGE):
-        return 0
+        return scoring.Score(excluded="language")
     if _SCHOOL_RESTRICTED.search(listing.title):
-        return 0
+        return scoring.Score(excluded="school_restriction")
     # Whitelist gate: anything outside the target families is not applied to.
     if not in_target_family(title):
-        return 0
+        return scoring.Score(excluded="title_family")
     if any(h in loc_text for h in EXCLUDE_LOCATION_HINTS) and not _has_us_location(listing):
-        return 0
+        return scoring.Score(excluded="non_us")
     if any(h in title for h in CLEARANCE_HINTS) or any(h in loc_text for h in CLEARANCE_HINTS):
-        return 0
+        return scoring.Score(excluded="clearance")
 
-    if _SENIOR_YEARS.search(title):
-        return 0
+    if _SENIOR_YEARS.search(title) and not bypass:
+        return scoring.Score(excluded="level_years")
 
-    score = 0
+    parts: dict[str, int] = {}
 
     # Title tier (dominant signal).
     if any(t in title for t in HIGH_TITLES):
-        score += 55
+        parts["title_high"] = weights["title_high"]
     elif any(t in title for t in MEDIUM_TITLES):
-        score += 35
+        parts["title_medium"] = weights["title_medium"]
     else:
-        score += 8  # some relevance floor for active new-grad roles
+        parts["title_other"] = weights["title_other"]
 
     # Entry-level boost. Domain relevance alone was sending mid-level "ML
     # Engineer" postings to the top of the queue with the same 90 as a new-grad
     # req; an explicit early-career marker is the stronger signal about what is
     # actually winnable, so it gets the largest single bonus.
     if any(t in title for t in NEW_GRAD_TITLES):
-        score += 30
+        parts["entry_level"] = weights["entry_level"]
 
     # Location tier.
     if any(loc in loc_text for loc in HIGH_LOCATIONS) or not loc_text:
-        score += 35
+        parts["location_high"] = weights["location_high"]
     elif any(loc in loc_text for loc in MEDIUM_LOCATIONS):
-        score += 20
+        parts["location_medium"] = weights["location_medium"]
     elif _has_us_location(listing):
-        score += 8
+        parts["location_us"] = weights["location_us"]
 
     # Freshness nudge.
     if listing.date_posted:
         age_days = (dt.datetime.now(dt.UTC).timestamp() - listing.date_posted) / 86400
         if age_days <= 7:
-            score += 10
+            parts["fresh_7_days"] = weights["fresh_7_days"]
         elif age_days <= 30:
-            score += 5
+            parts["fresh_30_days"] = weights["fresh_30_days"]
 
-    return max(0, min(100, score))
+    return scoring.finish(parts)
 
 
 def _has_us_location(listing: Listing) -> bool:
     text = " ".join(listing.locations).lower()
     if not text:
         return True  # unspecified -> assume US new-grad board default
-    us_hints = ("united states", "usa", ", ca", ", ny", ", wa", ", tx", ", ma", "remote")
-    us_hints += tuple(HIGH_LOCATIONS + MEDIUM_LOCATIONS)
+    # Generic remote is not US evidence when a foreign country is explicit.
+    foreign = any(h in text for h in EXCLUDE_LOCATION_HINTS)
+    us_hints = ("united states", "usa", ", ca", ", ny", ", wa", ", tx", ", ma")
+    if not foreign:
+        us_hints += ("remote",)
+    us_hints += tuple(loc for loc in HIGH_LOCATIONS + MEDIUM_LOCATIONS if loc != "remote")
     return any(h in text for h in us_hints)
 
 
@@ -381,7 +401,8 @@ def sync(settings: Settings, *, resolve_redirects: bool = False) -> SyncResult:
                     else listing.url
                 )
                 ats = classify_ats(final_url)
-                score = heuristic_score(listing)
+                breakdown = score_breakdown(listing, settings)
+                score = breakdown.total
                 if score >= 70:
                     scored_hi += 1
 
@@ -402,6 +423,7 @@ def sync(settings: Settings, *, resolve_redirects: bool = False) -> SyncResult:
                     date_posted=listing.date_posted,
                     now_iso=now_iso,
                 )
+                scoring.persist(conn, listing.id, breakdown, "simplify")
                 counts[status] = counts.get(status, 0) + 1
 
             inactive = db.mark_inactive_absent(conn, seen, now_iso)

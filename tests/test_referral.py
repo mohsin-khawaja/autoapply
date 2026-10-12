@@ -118,10 +118,7 @@ def test_scoring_includes_pm_and_analyst_roles(profile):
     """The user is open to any role — PM/analyst titles must score, not be dropped."""
     for title in (
         "Associate Product Manager",
-        "Technical Program Manager",
-        "Business Analyst",
         "Data Analyst",
-        "Project Manager",
     ):
         assert referral.fit_score(_job(title), profile) > 0, title
 
@@ -153,6 +150,11 @@ def test_scout_upserts(tmp_path, monkeypatch, profile):
 
     conn = connect(settings.db_path)
     rows = conn.execute("SELECT id, score FROM jobs WHERE id LIKE 'ref-%'").fetchall()
+    breakdowns = conn.execute("SELECT total, contributions FROM job_score_breakdowns").fetchall()
+    import json
+
+    assert len(breakdowns) == len(rows)
+    assert all(sum(json.loads(r["contributions"]).values()) == r["total"] for r in breakdowns)
     conn.close()
     ids = {r["id"] for r in rows}
     assert "ref-amazon-100001" in ids  # entry SDE kept

@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 import httpx
 
+from autoapply import scoring
 from autoapply.config import Settings
 from autoapply.db import connect, transaction, upsert_job
 from autoapply.profile import Profile, load_profile
@@ -111,32 +112,51 @@ def _is_us(location: str) -> bool:
     return any(h in text for h in _US_HINTS)
 
 
-def fit_score(job: ReferralJob, profile: Profile) -> int:
+def fit_score(job: ReferralJob, profile: Profile, settings: Settings | None = None) -> int:
+    return score_breakdown(job, profile, settings).total
+
+
+def score_breakdown(
+    job: ReferralJob, profile: Profile, settings: Settings | None = None,
+) -> scoring.Score:
     """0-100 fit for a referral role. Broad by design: any role the user can do.
 
     Hard-excludes senior/leadership titles, non-US locations, and roles that
     don't use the user's background. Otherwise ranks by role family, then
     entry-level signals and profile skill overlap.
     """
+    from autoapply.sources.simplify import Listing
+    from autoapply.sources.simplify import score_breakdown as common_score
+
+    settings = settings or Settings()
+    weights = settings.score_weights
     title = job.title.lower()
-    if _SENIOR_RE.search(title):
-        return 0
+    if _SENIOR_RE.search(title) and not settings.bypass_level(title):
+        return scoring.Score(excluded="level_title")
     if any(h in title for h in _OFF_PROFILE):
-        return 0
+        return scoring.Score(excluded="off_profile")
     if not _is_us(job.location):
-        return 0
-
-    score = 12  # floor: a referral-company role the user is open to
-    for points, needles in _ROLE_TIERS:
+        return scoring.Score(excluded="non_us")
+    common = common_score(Listing(
+        id=job.id, company_name=job.company, title=job.title, url=job.url,
+        locations=job.locations, sponsorship="", category="", active=True,
+        is_visible=True, date_posted=None,
+    ), settings)
+    if common.excluded:
+        return common
+    parts = {"referral_base": weights["referral_base"]}
+    keys = ("referral_ml", "referral_software", "referral_data_solutions", "referral_product")
+    for key, (_, needles) in zip(keys, _ROLE_TIERS, strict=True):
         if any(n in title for n in needles):
-            score += points
+            parts[key] = weights[key]
             break
-
     if any(h in title for h in _ENTRY_HINTS):
-        score += 18
-    matched = sum(1 for s in profile.skills if s.lower() in title)
-    score += min(10, matched * 5)
-    return min(100, score)
+        parts["referral_entry"] = weights["referral_entry"]
+    matched = sum(1 for skill in profile.skills if skill.lower() in title)
+    parts["referral_skills"] = min(
+        weights["referral_skill_cap"], matched * weights["referral_skill"]
+    )
+    return scoring.finish(parts)
 
 
 def fetch_amazon(
@@ -225,8 +245,9 @@ class ReferralResult:
     errors: list[str]
 
 
-def scout(settings: Settings, *, min_score: int = 1) -> ReferralResult:
+def scout(settings: Settings, *, min_score: int | None = None) -> ReferralResult:
     """Fetch referral-company postings, fit-score them, and upsert into ``jobs``."""
+    min_score = settings.min_score if min_score is None else min_score
     profile = load_profile(settings.profile_path)
     now_iso = dt.datetime.now(dt.UTC).isoformat()
     jobs: list[ReferralJob] = []
@@ -243,8 +264,10 @@ def scout(settings: Settings, *, min_score: int = 1) -> ReferralResult:
     upserted = hi = 0
     with transaction(conn):
         for job in jobs:
-            score = fit_score(job, profile)
-            if score < min_score:
+            breakdown = score_breakdown(job, profile, settings)
+            score = breakdown.total
+            if score <= 0 or score < min_score:
+                scoring.refresh_existing(conn, job.id, breakdown, "referral")
                 continue
             posted_epoch = None
             if job.posted:
@@ -270,6 +293,7 @@ def scout(settings: Settings, *, min_score: int = 1) -> ReferralResult:
                 score=score,
                 date_posted=posted_epoch,
             )
+            scoring.persist(conn, job.id, breakdown, "referral")
             upserted += 1
             if score >= 50:
                 hi += 1

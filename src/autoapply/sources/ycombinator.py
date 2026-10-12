@@ -26,7 +26,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from autoapply import db
+from autoapply import db, scoring
 from autoapply.config import Settings
 
 JOBS_URL = "https://www.ycombinator.com/jobs/role/{role}"
@@ -158,25 +158,42 @@ def is_us(p: Posting) -> bool:
     return low.replace("remote", "").strip(" ()/") == ""
 
 
-def score_posting(p: Posting) -> int:
-    """Score 0-100. Hard-excludes anything not US, not full-time, or above level."""
-    if not is_new_grad(p) or not is_us(p):
-        return 0
-    if p.job_type and p.job_type.lower() != "full-time":
-        return 0
+def score_posting(p: Posting, settings: Settings | None = None) -> int:
+    return score_breakdown(p, settings).total
 
-    score = 50  # cleared the entry-level and location bars
+
+def score_breakdown(p: Posting, settings: Settings | None = None) -> scoring.Score:
+    """Score 0-100. Hard-excludes anything not US, not full-time, or above level."""
+    from autoapply.sources.simplify import Listing
+    from autoapply.sources.simplify import score_breakdown as common_score
+
+    settings = settings or Settings()
+    weights = settings.score_weights
+    if not is_new_grad(p) and not settings.bypass_level(p.title):
+        return scoring.Score(excluded="level_experience")
+    if not is_us(p):
+        return scoring.Score(excluded="non_us")
+    if p.job_type and p.job_type.lower() != "full-time":
+        return scoring.Score(excluded="not_full_time")
+    common = common_score(Listing(
+        id=p.id, company_name=p.company_name, title=p.title, url=p.url,
+        locations=[p.location], sponsorship="", category="", active=True,
+        is_visible=True, date_posted=None,
+    ), settings)
+    if common.excluded:
+        return common
+    parts = {"yc_base": weights["yc_base"]}
     if p.min_experience == "Any (new grads ok)":
-        score += 20
+        parts["yc_new_grad"] = weights["yc_new_grad"]
     role = p.role_type.lower()
     if role in ("machine learning", "data science"):
-        score += 25
+        parts["yc_ml_data"] = weights["yc_ml_data"]
     elif role in ("backend", "full stack", "frontend"):
-        score += 15
+        parts["yc_software"] = weights["yc_software"]
     title = p.title.lower()
     if any(t in title for t in ("machine learning", "ml ", "ai ", "new grad", "junior")):
-        score += 5
-    return max(0, min(100, score))
+        parts["yc_title"] = weights["yc_title"]
+    return scoring.finish(parts)
 
 
 @dataclass(slots=True)
@@ -190,13 +207,18 @@ class YCSyncResult:
 def sync(settings: Settings, *, roles: tuple[str, ...] = DEFAULT_ROLES) -> YCSyncResult:
     """Pull YC postings, keep the new-grad ones, upsert into the jobs table."""
     postings = fetch_postings(roles)
-    keep = [p for p in postings if score_posting(p) > 0]
+    eligible = 0
     now = dt.datetime.now(dt.UTC).isoformat()
     conn = db.connect(settings.db_path)
     new = 0
     try:
         with db.transaction(conn):
-            for p in keep:
+            for p in postings:
+                breakdown = score_breakdown(p, settings)
+                if breakdown.total <= 0:
+                    scoring.refresh_existing(conn, p.id, breakdown, "yc")
+                    continue
+                eligible += 1
                 status = db.upsert_job(
                     conn,
                     id=p.id,
@@ -209,12 +231,13 @@ def sync(settings: Settings, *, roles: tuple[str, ...] = DEFAULT_ROLES) -> YCSyn
                     ats="yc",
                     category=p.role_type,
                     locations_json=json.dumps([p.location]),
-                    score=score_posting(p),
+                    score=breakdown.total,
                 )
+                scoring.persist(conn, p.id, breakdown, "yc")
                 if status == "new":
                     new += 1
     finally:
         conn.close()
     return YCSyncResult(
-        fetched=len(postings), new_grad=len(keep), upserted=len(keep), new=new
+        fetched=len(postings), new_grad=eligible, upserted=eligible, new=new
     )

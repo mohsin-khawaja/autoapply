@@ -10,7 +10,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from autoapply import db, llm
+from autoapply import db, llm, scoring
 from autoapply.config import load_settings
 from autoapply.profile import load_profile
 from autoapply.sources import simplify
@@ -195,7 +195,7 @@ def _print_discovery_status(settings, discovery) -> None:
 def away(
     interval: str = typer.Option("45m", "--interval", help="Sleep between cycles (e.g. 45m, 30s)."),
     max_jobs: int = typer.Option(40, "--max", help="Jobs to work per cycle."),
-    min_score: int = typer.Option(0, "--min-score", help="Score floor when topping up the queue."),
+    min_score: int | None = typer.Option(None, "--min-score", help="Queue score floor."),
     cycles: int = typer.Option(None, "--cycles", help="Stop after N cycles (default: forever)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="One cycle, no applying."),
 ) -> None:
@@ -208,6 +208,7 @@ def away(
     from autoapply import away as away_mod
 
     settings = load_settings()
+    min_score = settings.min_score if min_score is None else min_score
     settings.ensure_dirs()
     seconds = _parse_interval(interval)
 
@@ -278,7 +279,7 @@ def yc() -> None:
 
 @app.command()
 def referrals(
-    min_score: int = typer.Option(1, "--min-score", help="Skip postings below this fit."),
+    min_score: int | None = typer.Option(None, "--min-score", help="Minimum referral fit."),
 ) -> None:
     """Pull postings from referral companies (Amazon, Odoo) and fit-score them."""
     from autoapply.sources import referral
@@ -297,14 +298,17 @@ def referrals(
 
 @app.command(name="list")
 def list_jobs(
-    min_score: int = typer.Option(0, "--min-score", help="Only show jobs at/above this score."),
+    min_score: int | None = typer.Option(None, "--min-score", help="Minimum score."),
+    explain: bool = typer.Option(False, "--explain", help="Show stored score contributions."),
     limit: int = typer.Option(40, help="Max rows."),
     all_jobs: bool = typer.Option(False, "--all", help="Include inactive/hidden jobs."),
 ) -> None:
     """Show scored jobs as a table."""
     settings = load_settings()
+    min_score = settings.min_score if min_score is None else min_score
     conn = db.connect(settings.db_path)
     rows = db.list_jobs(conn, min_score=min_score, active_only=not all_jobs, limit=limit)
+    explanations = {r.id: scoring.explain(conn, r.id, r.score) for r in rows} if explain else {}
     conn.close()
     if not rows:
         console.print("[yellow]no jobs[/] — run `autoapply sync` first.")
@@ -323,13 +327,16 @@ def list_jobs(
             ", ".join(r.locations[:2]) or "—", r.id[:8],
         )
     console.print(table)
+    if explain:
+        for r in rows:
+            console.print(f"{r.id[:8]} {r.title}: {explanations[r.id]}", markup=False)
 
 
 @queue_app.command("add")
 def queue_add(
     job_id: str = typer.Argument(None, help="Job id (or unique prefix) to enqueue."),
     top: int = typer.Option(None, "--top", help="Enqueue the top-N by score."),
-    min_score: int = typer.Option(70, "--min-score", help="Score floor for --top."),
+    min_score: int | None = typer.Option(None, "--min-score", help="Score floor for --top."),
     fillable_only: bool = typer.Option(
         True,
         "--fillable-only/--all-ats",
@@ -340,6 +347,7 @@ def queue_add(
     from autoapply.runner import _ACCOUNT_WALLED, enqueue
 
     settings = load_settings()
+    min_score = settings.min_score if min_score is None else min_score
     conn = db.connect(settings.db_path)
     if top is not None:
         # Over-fetch, then drop the login-walled rows so --top N really yields
@@ -352,7 +360,7 @@ def queue_add(
             rows = conn.execute(
                 f"""SELECT j.id FROM jobs j
                     LEFT JOIN applications a ON a.job_id = j.id
-                    WHERE j.active = 1 AND j.is_visible = 1 AND j.score >= ?
+                    WHERE j.active = 1 AND j.is_visible = 1 AND j.score > 0 AND j.score >= ?
                       AND a.job_id IS NULL
                       AND COALESCE(j.ats, '') NOT IN ({",".join("?" * len(walled))})
                     -- Spend the N slots on ATSs that can actually complete an
@@ -370,7 +378,7 @@ def queue_add(
             ).fetchall()
             ids = [r["id"] for r in rows]
         else:
-            ids = [j.id for j in db.list_jobs(conn, min_score=min_score, limit=top)]
+            ids = [j.id for j in db.list_jobs(conn, min_score=max(1, min_score), limit=top)]
     elif job_id:
         rows = conn.execute(
             "SELECT id FROM jobs WHERE id LIKE ?", (job_id + "%",)

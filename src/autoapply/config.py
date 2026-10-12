@@ -7,7 +7,9 @@ directory with ``AUTOAPPLY_HOME``.
 
 from __future__ import annotations
 
+import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -22,6 +24,23 @@ LISTINGS_URL = (
 )
 
 
+DEFAULT_LEVEL_BYPASS = (
+    r"\bforward deployed\b", r"\bfde\b", r"\bsolutions architect\b",
+    r"\bsales engineer\b", r"\bsolutions engineer\b", r"\bcustomer engineer\b",
+    r"\bai engineer\b", r"\bml engineer\b", r"\bmachine learning engineer\b",
+)
+DEFAULT_SCORE_WEIGHTS = {
+    "title_high": 55, "title_medium": 35, "title_other": 8, "entry_level": 30,
+    "location_high": 35, "location_medium": 20, "location_us": 8,
+    "fresh_7_days": 10, "fresh_30_days": 5,
+    "yc_base": 50, "yc_new_grad": 20, "yc_ml_data": 25,
+    "yc_software": 15, "yc_title": 5,
+    "referral_base": 12, "referral_ml": 55, "referral_software": 50,
+    "referral_data_solutions": 42, "referral_product": 38,
+    "referral_entry": 18, "referral_skill": 5, "referral_skill_cap": 10,
+}
+
+
 @dataclass(slots=True)
 class Settings:
     """Central configuration. Construct via :func:`load_settings`."""
@@ -29,6 +48,13 @@ class Settings:
     repo_root: Path = REPO_ROOT
     home: Path = field(default_factory=lambda: _home())
     profile_path: Path = field(default_factory=lambda: REPO_ROOT / "profile.yaml")
+
+    level_bypass_patterns: tuple[str, ...] = DEFAULT_LEVEL_BYPASS
+    score_weights: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_SCORE_WEIGHTS))
+    min_score: int = 1
+
+    def bypass_level(self, title: str) -> bool:
+        return any(re.search(pattern, title, re.I) for pattern in self.level_bypass_patterns)
 
     # LLM provider: "anthropic" (API, better answers) or "ollama" (local, free).
     llm_provider: str = "anthropic"
@@ -151,4 +177,22 @@ def load_settings() -> Settings:
         s.auto_submit_allowlist = {
             ATSKind(k.strip().lower()) for k in allow.split(",") if k.strip()
         }
+    if "AUTOAPPLY_LEVEL_BYPASS_PATTERNS" in os.environ:
+        patterns = json.loads(os.environ["AUTOAPPLY_LEVEL_BYPASS_PATTERNS"])
+        if not isinstance(patterns, list) or not all(isinstance(p, str) for p in patterns):
+            raise ValueError("AUTOAPPLY_LEVEL_BYPASS_PATTERNS must be a JSON string array")
+        for pattern in patterns:
+            re.compile(pattern)
+        s.level_bypass_patterns = tuple(patterns)
+    if "AUTOAPPLY_SCORE_WEIGHTS" in os.environ:
+        weights = json.loads(os.environ["AUTOAPPLY_SCORE_WEIGHTS"])
+        if not isinstance(weights, dict) or any(
+            k not in DEFAULT_SCORE_WEIGHTS or type(v) is not int or not 0 <= v <= 100
+            for k, v in weights.items()
+        ):
+            raise ValueError("AUTOAPPLY_SCORE_WEIGHTS requires known keys and integers 0..100")
+        s.score_weights.update(weights)
+    s.min_score = int(os.environ.get("AUTOAPPLY_MIN_SCORE", "1"))
+    if not 1 <= s.min_score <= 100:
+        raise ValueError("AUTOAPPLY_MIN_SCORE must be 1..100")
     return s

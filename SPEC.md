@@ -41,17 +41,106 @@ exist in the live feed.)
 - `autoapply sync` — fetch listings.json, upsert into SQLite, mark new/changed/inactive rows
 - Resolve redirect URLs (Simplify links often redirect to the actual ATS) and classify the final URL by ATS: `jobs.ashbyhq.com`, `boards.greenhouse.io` / `job-boards.greenhouse.io`, `jobs.lever.co`, `myworkdayjobs.com`, `smartrecruiters.com`, `icims.com`, `rippling.com`, `greenhouse embedded`, `other`
 
-**Scoring/filtering.** Score each listing 0–100 against my profile using cheap heuristics first
-(title keyword match, location, sponsorship, active), then optionally a local-LLM relevance pass on
-the job description for the top candidates. My targeting:
+**Scoring/filtering (implemented).** Deterministic heuristics, integer scores 0–100;
+no LLM relevance pass runs. Simplify and YC use fixed title/location taxonomies,
+not resume embeddings or inferred experience. Only referral scoring reads
+`profile.skills` (case-insensitive title substrings). Applicant facts still come
+only from `profile.yaml`; targeting configuration does not supply form answers.
 
-- Titles (high priority): ML Engineer, AI Engineer, Machine Learning, Applied AI, AI Solutions Engineer, Forward Deployed Engineer, Solutions Engineer
-- Titles (medium): Software Engineer, SWE New Grad, Backend Engineer, Data Scientist, Product Manager (AI)
-- Locations: SF Bay Area, San Jose, Berkeley, Remote (US). Willing: NYC, Seattle, San Diego
-- Exclude: roles requiring 3+ YOE, clearance-required, non-US
-- I do NOT require sponsorship (US work authorized) — do not filter out "no sponsorship" listings
+### Level exceptions and hard gates
 
-Commands: `autoapply list --min-score 70`, `autoapply queue add <id>`, `autoapply queue add --top 20`.
+`AUTOAPPLY_LEVEL_BYPASS_PATTERNS` is a JSON array of case-insensitive Python regexes
+matched against the job title. Default word-bounded patterns: `forward deployed`,
+`fde`, `solutions architect`, `sales engineer`, `solutions engineer`,
+`customer engineer`, `ai engineer`, `ml engineer`, `machine learning engineer`.
+An empty array restores the strict level gate. A match bypasses seniority title
+markers and title years-of-experience limits (and YC's structured experience bar).
+It gives **no score bonus** and bypasses no other gate.
+
+Without an exception, senior/staff/principal/lead/manager (except product manager),
+director, architect, II/III/IV, leadership titles and 3–19 years in the title remain
+excluded by Simplify's existing marker rules. YC also requires `Any (new grads ok)`
+or `1+ years`; referral retains its additional seniority regex.
+
+All sources enforce the shared title-family gate: software, AI/ML, data/analytics,
+GTM/solutions (including standalone FDE), or product. Language/gig, school-restricted,
+clearance, internship, hardware/support and research-scientist exclusions remain.
+Simplify additionally checks active/visible. YC requires full-time and positive US
+location evidence; referral retains its off-profile and US checks. The existing
+location heuristics are not a geographic classifier: unknown Simplify locations
+are not automatically rejected, and unspecified Simplify/referral locations remain
+eligible. Explicit foreign locations do not become US merely by including `Remote`.
+Sponsorship is neither a feature nor an exclusion.
+
+### Features and weights
+
+Before this change, the same numeric weights below were literals. Simplify hard
+excluded all above-level titles; YC and referral had independent narrower gates.
+Referral previously admitted program/project managers and business analysts outside
+the shared title-family list; they now obey that list too.
+
+Each applicable feature contributes once; alternatives within a tier are exclusive.
+Keyword tables live in each source module and use case-insensitive substrings.
+
+| Source | Config weight keys | Default contribution / trigger |
+|---|---|---|
+| Simplify | `title_high`, `title_medium`, `title_other` | 55 / 35 / 8; first matching HIGH_TITLES, MEDIUM_TITLES, otherwise eligible family |
+| Simplify | `entry_level` | 30; any NEW_GRAD_TITLES marker |
+| Simplify | `location_high`, `location_medium`, `location_us` | 35 / 20 / 8; high location (or blank), medium location, otherwise US hint |
+| Simplify | `fresh_7_days`, `fresh_30_days` | 10 / 5; age ≤7 days, else ≤30 days; missing/older date adds 0 |
+| YC | `yc_base`, `yc_new_grad` | 50 for eligible post; 20 for `Any (new grads ok)` |
+| YC | `yc_ml_data`, `yc_software` | 25 for machine learning/data science role type; else 15 for backend/full stack/frontend |
+| YC | `yc_title` | 5 for title containing machine learning, `ml `, `ai `, new grad, junior |
+| Referral | `referral_base` | 12 for eligible post |
+| Referral | `referral_ml`, `referral_software`, `referral_data_solutions`, `referral_product` | 55 / 50 / 42 / 38; first matching _ROLE_TIERS group |
+| Referral | `referral_entry` | 18 for any _ENTRY_HINTS marker |
+| Referral | `referral_skill`, `referral_skill_cap` | 5 per matching profile skill, capped at 10 total |
+
+Referral tier groups, in order: ML/AI/applied scientist/data scientist/research
+engineer; software/SDE/data engineer/full stack/backend/frontend; data/BI/analytics/
+solutions; product/program/project/operations analyst. Shared hard exclusions run
+before these tier matches. Simplify high locations: SF/Bay Area/San Jose/Berkeley,
+Peninsula/South Bay/Oakland/remote. Medium: NYC/Seattle/San Diego. Matching behavior
+is otherwise unchanged (including future dates receiving the ≤7-day freshness bonus).
+
+`AUTOAPPLY_SCORE_WEIGHTS` is a JSON object overriding any of the keys above;
+unspecified keys retain defaults. Unknown keys, non-integers, negatives and values
+above 100 fail configuration loading. Sum contributions, then clamp to 0–100.
+A signed `clamp` contribution records any adjustment so the stored contributions
+sum exactly to the stored job score. Excluded jobs score 0 with an exclusion reason
+and an empty contribution map.
+
+### Thresholds and explanations
+
+`AUTOAPPLY_MIN_SCORE` (integer 1–100, default **1**) controls the default for
+`list`, `queue add --top`, `away`, and referral ingestion. Explicit `--min-score`
+overrides it; `list --min-score 0 --explain` can inspect rejected Simplify rows.
+Automatic queue selection always requires score >0 even with an explicit zero
+threshold. Previously defaults differed: list/away 0, queue-top 70, referral 1.
+Simplify stores all feed rows; YC stores positive-scored rows; referrals store
+positive rows meeting the selected ingestion threshold. Previously stored YC/referral
+rows that are now rejected still have their scores and explanations refreshed. Summary counters ≥70 and
+≥50 are descriptive statistics, not eligibility gates.
+
+Each ingested job stores its explanation transactionally alongside the job upsert
+in `job_score_breakdowns` (`job_id` primary/foreign key, `source`, JSON
+`contributions`, nullable `excluded`, `total`, `scored_at`). This additive table
+leaves frozen `db.py` and its job row API unchanged. `autoapply list --explain`
+shows stored contributions or exclusion reason. Legacy rows, or explanations whose
+total differs from the current job score, say unavailable; rediscovery records new
+breakdowns. Changing config does not retroactively rescore the DB or requeue any
+application. No production applications are submitted during development.
+
+Example `.env` (preferences only):
+
+```dotenv
+AUTOAPPLY_LEVEL_BYPASS_PATTERNS='["forward deployed", "\\bfde\\b", "solutions architect", "sales engineer", "solutions engineer", "customer engineer", "ai engineer", "ml engineer"]'
+AUTOAPPLY_SCORE_WEIGHTS='{"title_high":55,"entry_level":20,"location_high":25}'
+AUTOAPPLY_MIN_SCORE=60
+```
+
+Commands: `autoapply sync`, `autoapply discover`, `autoapply list --explain`,
+`autoapply list --min-score 70 --explain`, `autoapply queue add --top 20`.
 
 ## 4. Profile (single source of truth)
 

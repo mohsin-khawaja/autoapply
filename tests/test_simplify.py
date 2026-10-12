@@ -56,7 +56,7 @@ def test_entry_level_outranks_an_equally_relevant_mid_level_title():
 
 
 def test_score_excludes_out_of_reach_levels():
-    """Levels above new grad must be hard zeros, not merely downranked."""
+    """Non-allowlisted levels above new grad remain hard zeros."""
 
     def score(title: str) -> int:
         return simplify.heuristic_score(
@@ -68,10 +68,10 @@ def test_score_excludes_out_of_reach_levels():
         )
 
     for title in (
-        "Sr. Software Engineer", "Staff ML Engineer", "Principal Engineer",
+        "Sr. Software Engineer", "Staff Software Engineer", "Principal Engineer",
         "Software Engineer III", "Software Engineer II", "Head of Engineering",
         "Engineering Manager", "Software Architect", "Distinguished Engineer",
-        "ML Engineer (5+ years)", "Software Engineering Intern",
+        "Software Engineer (5+ years)", "Software Engineering Intern",
     ):
         assert score(title) == 0, title
     # ...while genuine entry-level titles survive.

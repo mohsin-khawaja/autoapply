@@ -146,7 +146,7 @@ def _top_up_queue(
     rows = conn.execute(
         """SELECT j.id FROM jobs j
            LEFT JOIN applications a ON a.job_id = j.id
-           WHERE j.active = 1 AND j.is_visible = 1 AND j.score >= ?
+           WHERE j.active = 1 AND j.is_visible = 1 AND j.score > 0 AND j.score >= ?
              AND a.job_id IS NULL
              AND j.ats IN (?, ?, ?)
              -- Boards repost the same req under a new id. A second application
@@ -198,13 +198,14 @@ def away(
     *,
     interval_seconds: float = 2700.0,
     batch: int = 40,
-    min_score: int = 0,
+    min_score: int | None = None,
     auto_submit: bool = True,
     max_cycles: int | None = None,
 ) -> None:
     """Loop until killed. An empty cycle sleeps and tries again, never exits."""
     cycle = 0
     started = dt.datetime.now()
+    min_score = settings.min_score if min_score is None else min_score
     console.print(
         f"[bold]away mode[/] — batch {batch}, min-score {min_score}, "
         f"interval {interval_seconds / 60:.0f}m. Ctrl-C or `pkill -f 'autoapply away'` to stop."
